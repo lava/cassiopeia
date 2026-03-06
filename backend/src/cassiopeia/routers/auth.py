@@ -6,9 +6,6 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
-
 from cassiopeia.config import settings
 from cassiopeia.db import get_db
 from cassiopeia.models import User, UserToken
@@ -16,14 +13,6 @@ from cassiopeia.models import User, UserToken
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 oauth = OAuth()
-
-DEFAULT_USER = {
-    "sub": "local",
-    "email": "local@cassiopeia",
-    "name": "Lokal",
-    "picture": "",
-    "is_anonymous": False,
-}
 
 
 def oidc_configured() -> bool:
@@ -40,21 +29,6 @@ if oidc_configured():
         ),
         client_kwargs={"scope": "openid email profile"},
     )
-
-
-class AutoLoginMiddleware(BaseHTTPMiddleware):
-    """When OIDC is not configured, auto-populate the session with a default user.
-
-    This means the rest of the codebase never needs to distinguish between
-    auth-enabled and auth-disabled modes — there is always a user.
-    """
-
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        if not oidc_configured() and "user" not in request.session:
-            request.session["user"] = DEFAULT_USER
-        return await call_next(request)
 
 
 def _session_user(user: User) -> dict[str, Any]:
@@ -87,7 +61,7 @@ async def create_anonymous(
 @router.get("/login")
 async def login(request: Request) -> RedirectResponse:
     if not oidc_configured():
-        return RedirectResponse(url="/dashboard")
+        return RedirectResponse(url="/")
     redirect_uri = f"{settings.base_url}/api/auth/callback"
     return await oauth.oidc.authorize_redirect(request, redirect_uri)  # type: ignore[no-any-return]
 
@@ -180,3 +154,8 @@ async def me(request: Request) -> dict[str, Any]:
     if user:
         return {"authenticated": True, "user": user}
     return {"authenticated": False, "user": None}
+
+
+@router.get("/config")
+async def auth_config() -> dict[str, bool]:
+    return {"oidc_enabled": oidc_configured()}

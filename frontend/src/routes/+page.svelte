@@ -25,7 +25,11 @@
 			<a href="/dashboard" class="cta">Zum Dashboard &rarr;</a>
 		{:else}
 			<div class="auth-buttons">
-				<a href="/api/auth/login" class="cta">Anmelden &rarr;</a>
+				{#if auth.oidc_enabled}
+					<a href="/api/auth/login" class="cta">Anmelden &rarr;</a>
+				{:else}
+					<span class="cta cta-disabled" title="OIDC ist nicht konfiguriert">Anmelden &rarr;</span>
+				{/if}
 				<button class="cta cta-secondary" onclick={handleAnonymous} disabled={loading}>
 					{loading ? 'Wird erstellt…' : 'Ohne Konto starten'}
 				</button>
@@ -90,10 +94,18 @@
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 	}
 
-	.cta:disabled {
-		opacity: 0.6;
+	.cta:disabled,
+	.cta-disabled {
+		opacity: 0.5;
 		cursor: not-allowed;
 		transform: none;
+		pointer-events: none;
+		background: #9ca3af;
+	}
+
+	.cta-disabled {
+		pointer-events: auto;
+		cursor: help;
 	}
 
 	.cta-secondary {

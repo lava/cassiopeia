@@ -31,7 +31,11 @@
 					Du verwendest ein anonymes Konto. Erstelle ein permanentes Konto,
 					um deine Daten zu sichern.
 				</p>
-				<a href="/api/auth/login" class="link-btn">Konto erstellen &rarr;</a>
+				{#if auth.oidc_enabled}
+					<a href="/api/auth/login" class="link-btn">Konto erstellen &rarr;</a>
+				{:else}
+					<span class="link-btn link-btn-disabled" title="OIDC ist nicht konfiguriert">Konto erstellen &rarr;</span>
+				{/if}
 			</div>
 		{/if}
 
@@ -224,6 +228,16 @@
 
 	.link-btn:hover {
 		background: #374151;
+	}
+
+	.link-btn-disabled {
+		opacity: 0.5;
+		background: #9ca3af;
+		cursor: help;
+	}
+
+	.link-btn-disabled:hover {
+		background: #9ca3af;
 	}
 
 	.logout-btn {

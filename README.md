@@ -7,25 +7,24 @@ Health tracking app that consolidates data from Oura, Garmin, and Bearable into 
 ### Prerequisites
 
 - Docker & Docker Compose
-- An OIDC provider
+- An OIDC provider (optional — without it, only anonymous accounts are available)
 
 ### Quick start
 
-1. **Set OIDC credentials** (create a `.env` file or export them):
+```bash
+docker compose up
+```
 
-   ```bash
-   export OIDC_ISSUER=https://my-tenant.eu.auth0.com
-   export OIDC_CLIENT_ID=your-client-id
-   export OIDC_CLIENT_SECRET=your-client-secret
-   ```
+This starts PostgreSQL, runs migrations, and launches the app at `http://localhost:8080`.
+Without OIDC credentials, the app offers anonymous login only.
 
-2. **Start everything:**
+To enable OIDC login, set credentials (via a `.env` file or env vars):
 
-   ```bash
-   docker compose up
-   ```
-
-   This starts PostgreSQL, runs migrations, and launches the app at `http://localhost:8080`.
+```bash
+export OIDC_ISSUER=https://my-tenant.eu.auth0.com
+export OIDC_CLIENT_ID=your-client-id
+export OIDC_CLIENT_SECRET=your-client-secret
+```
 
 ### Environment variables
 
