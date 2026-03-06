@@ -11,7 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from cassiopeia.config import settings
 from cassiopeia.db import async_session_maker
-from cassiopeia.routers.auth import router as auth_router
+from cassiopeia.routers.auth import AutoLoginMiddleware, router as auth_router
 from cassiopeia.routers.import_ import router as import_router
 from cassiopeia.routers.metrics import router as metrics_router
 from cassiopeia.seed import seed_default_metrics
@@ -44,6 +44,7 @@ app.include_router(auth_router)
 app.include_router(import_router)
 app.include_router(metrics_router)
 
+app.add_middleware(AutoLoginMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
