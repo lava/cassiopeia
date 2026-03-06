@@ -14,18 +14,18 @@ terraform {
       source  = "kislerdm/neon"
       version = "~> 0.13"
     }
-    zitadel = {
-      source  = "zitadel/zitadel"
-      version = "~> 2.9"
+    auth0 = {
+      source  = "auth0/auth0"
+      version = "~> 1.40"
     }
   }
 }
 
 provider "neon" {}
 
-provider "zitadel" {
-  domain       = var.zitadel_domain
-  access_token = var.zitadel_token
+provider "auth0" {
+  domain    = var.auth0_domain
+  api_token = var.auth0_api_token
 }
 
 provider "google" {
@@ -91,28 +91,24 @@ resource "google_secret_manager_secret_version" "database_url" {
 }
 
 # =============================================================================
-# Authentication (Zitadel)
+# Authentication (Auth0)
 # =============================================================================
 
-resource "zitadel_project" "cassiopeia" {
-  name   = "cassiopeia"
-  org_id = var.zitadel_org_id
+resource "auth0_client" "cassiopeia" {
+  name     = "cassiopeia"
+  app_type = "regular_web"
+
+  callbacks           = ["${var.app_origin}/api/auth/callback"]
+  allowed_logout_urls = ["${var.app_origin}"]
+  web_origins         = [var.app_origin]
+
+  grant_types     = ["authorization_code"]
+  oidc_conformant = true
 }
 
-resource "zitadel_application_oidc" "cassiopeia" {
-  project_id = zitadel_project.cassiopeia.id
-  org_id     = var.zitadel_org_id
-  name       = "cassiopeia"
-
-  redirect_uris             = ["${var.app_origin}/api/auth/callback"]
-  post_logout_redirect_uris = ["${var.app_origin}"]
-  response_types          = ["OIDC_RESPONSE_TYPE_CODE"]
-  grant_types             = ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
-  app_type                = "OIDC_APP_TYPE_WEB"
-  auth_method_type        = "OIDC_AUTH_METHOD_TYPE_BASIC"
-  version                 = "OIDC_VERSION_1_0"
-  access_token_type       = "OIDC_TOKEN_TYPE_BEARER"
-  dev_mode                = false
+resource "auth0_client_credentials" "cassiopeia" {
+  client_id             = auth0_client.cassiopeia.client_id
+  authentication_method = "client_secret_post"
 }
 
 # Store OIDC credentials in Secret Manager for Cloud Run
@@ -126,7 +122,7 @@ resource "google_secret_manager_secret" "oidc_client_id" {
 
 resource "google_secret_manager_secret_version" "oidc_client_id" {
   secret      = google_secret_manager_secret.oidc_client_id.id
-  secret_data = zitadel_application_oidc.cassiopeia.client_id
+  secret_data = auth0_client.cassiopeia.client_id
 }
 
 resource "google_secret_manager_secret" "oidc_client_secret" {
@@ -139,7 +135,7 @@ resource "google_secret_manager_secret" "oidc_client_secret" {
 
 resource "google_secret_manager_secret_version" "oidc_client_secret" {
   secret      = google_secret_manager_secret.oidc_client_secret.id
-  secret_data = zitadel_application_oidc.cassiopeia.client_secret
+  secret_data = auth0_client_credentials.cassiopeia.client_secret
 }
 
 # =============================================================================
@@ -241,7 +237,7 @@ resource "google_cloud_run_v2_service" "cassiopeia" {
 
       env {
         name  = "OIDC_ISSUER"
-        value = "https://${var.zitadel_domain}"
+        value = "https://${var.auth0_domain}"
       }
 
       env {

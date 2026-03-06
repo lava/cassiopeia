@@ -14,18 +14,13 @@ variable "neon_org_id" {
   type        = string
 }
 
-variable "zitadel_org_id" {
-  description = "Zitadel organization ID"
+variable "auth0_domain" {
+  description = "Auth0 tenant domain (e.g. my-tenant.eu.auth0.com)"
   type        = string
 }
 
-variable "zitadel_domain" {
-  description = "Zitadel instance domain (e.g. my-instance-abc123.zitadel.cloud)"
-  type        = string
-}
-
-variable "zitadel_token" {
-  description = "Zitadel Personal Access Token"
+variable "auth0_api_token" {
+  description = "Auth0 Management API token"
   type        = string
   sensitive   = true
 }

@@ -34,12 +34,12 @@ output "neon_host" {
 }
 
 output "oidc_issuer" {
-  description = "OIDC issuer URL (Zitadel)"
-  value       = "https://${var.zitadel_domain}"
+  description = "OIDC issuer URL (Auth0)"
+  value       = "https://${var.auth0_domain}"
 }
 
 output "oidc_client_id" {
   description = "OIDC client ID"
-  value       = zitadel_application_oidc.cassiopeia.client_id
+  value       = auth0_client.cassiopeia.client_id
   sensitive   = true
 }
