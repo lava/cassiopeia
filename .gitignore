@@ -13,6 +13,7 @@ build/
 # Environment
 .env
 terraform.tfvars
+backend.conf
 .terraform/
 *.tfstate
 *.tfstate.backup
