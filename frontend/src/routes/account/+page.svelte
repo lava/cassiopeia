@@ -25,6 +25,16 @@
 	</div>
 
 	{#if auth.user}
+		{#if auth.user.is_anonymous}
+			<div class="card anon-card">
+				<p class="anon-text">
+					Du verwendest ein anonymes Konto. Erstelle ein permanentes Konto,
+					um deine Daten zu sichern.
+				</p>
+				<a href="/api/auth/login" class="link-btn">Konto erstellen &rarr;</a>
+			</div>
+		{/if}
+
 		<div class="card profile-card">
 			<div class="profile-row">
 				{#if auth.user.picture}
@@ -35,8 +45,12 @@
 					</span>
 				{/if}
 				<div class="profile-info">
-					<span class="profile-name">{auth.user.name}</span>
-					<span class="profile-email">{auth.user.email}</span>
+					<span class="profile-name">{auth.user.name || 'Anonym'}</span>
+					{#if auth.user.email}
+						<span class="profile-email">{auth.user.email}</span>
+					{:else}
+						<span class="profile-email anon-label">Anonymes Konto</span>
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -176,6 +190,40 @@
 	.service-status.pending {
 		background: #f3f4f6;
 		color: #9ca3af;
+	}
+
+	.anon-card {
+		background: #fffbeb;
+		border-color: #fde68a;
+	}
+
+	.anon-text {
+		margin: 0 0 1rem;
+		font-size: 0.9rem;
+		color: #92400e;
+		line-height: 1.5;
+	}
+
+	.anon-label {
+		color: #d97706;
+	}
+
+	.link-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.55rem 1.1rem;
+		border-radius: 8px;
+		background: #1f2937;
+		color: #fff;
+		text-decoration: none;
+		font-size: 0.875rem;
+		font-weight: 600;
+		transition: all 0.15s ease;
+	}
+
+	.link-btn:hover {
+		background: #374151;
 	}
 
 	.logout-btn {

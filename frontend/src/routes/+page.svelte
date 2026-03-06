@@ -1,7 +1,16 @@
 <script lang="ts">
-	import { getAuth } from '$lib/auth.svelte';
+	import { goto } from '$app/navigation';
+	import { getAuth, loginAnonymously } from '$lib/auth.svelte';
 
 	const auth = getAuth();
+	let loading = $state(false);
+
+	async function handleAnonymous() {
+		loading = true;
+		const ok = await loginAnonymously();
+		loading = false;
+		if (ok) goto('/dashboard');
+	}
 </script>
 
 <div class="landing">
@@ -15,7 +24,12 @@
 		{#if auth.authenticated}
 			<a href="/dashboard" class="cta">Zum Dashboard &rarr;</a>
 		{:else}
-			<a href="/api/auth/login" class="cta">Anmelden &rarr;</a>
+			<div class="auth-buttons">
+				<a href="/api/auth/login" class="cta">Anmelden &rarr;</a>
+				<button class="cta cta-secondary" onclick={handleAnonymous} disabled={loading}>
+					{loading ? 'Wird erstellt…' : 'Ohne Konto starten'}
+				</button>
+			</div>
 		{/if}
 	</div>
 </div>
@@ -74,6 +88,31 @@
 		background: #374151;
 		transform: translateY(-1px);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+	}
+
+	.cta:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.cta-secondary {
+		background: transparent;
+		color: #4b5563;
+		border: 1px solid #d1d5db;
+	}
+
+	.cta-secondary:hover:not(:disabled) {
+		background: #f9fafb;
+		color: #1f2937;
+		border-color: #9ca3af;
+	}
+
+	.auth-buttons {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		align-items: center;
 	}
 
 	@media (max-width: 600px) {

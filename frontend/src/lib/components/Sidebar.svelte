@@ -88,7 +88,7 @@
 						{user.name?.charAt(0)?.toUpperCase() || '?'}
 					</span>
 				{/if}
-				<span class="user-name">{user.name || user.email}</span>
+				<span class="user-name">{user.name || user.email || 'Anonym'}</span>
 			</a>
 		{/if}
 	</div>

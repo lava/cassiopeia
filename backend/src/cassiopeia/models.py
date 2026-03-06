@@ -18,6 +18,20 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from cassiopeia.db import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sub: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    picture: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
 class MetricDefinition(Base):
     __tablename__ = "metric_definitions"
 
