@@ -29,7 +29,7 @@ new-migration:    ## Create a new migration (usage: make new-migration msg="add 
 # --- Deployment ---
 
 build:            ## Build Docker image
-	docker build -t $(IMAGE) .
+	docker build -f backend/Dockerfile -t $(IMAGE) .
 
 push: build       ## Build and push image to Artifact Registry
 	docker push $(IMAGE)
