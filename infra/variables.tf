@@ -14,6 +14,11 @@ variable "neon_org_id" {
   type        = string
 }
 
+variable "zitadel_org_id" {
+  description = "Zitadel organization ID"
+  type        = string
+}
+
 variable "zitadel_domain" {
   description = "Zitadel instance domain (e.g. my-instance-abc123.zitadel.cloud)"
   type        = string

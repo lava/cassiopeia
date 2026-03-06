@@ -68,8 +68,9 @@ resource "neon_project" "cassiopeia" {
   default_endpoint_settings {
     autoscaling_limit_min_cu = 0.25
     autoscaling_limit_max_cu = 0.25
-    suspend_timeout_seconds  = 300
   }
+
+  history_retention_seconds = 21600
 }
 
 # Store Neon connection URI in Secret Manager for Cloud Run
@@ -94,11 +95,13 @@ resource "google_secret_manager_secret_version" "database_url" {
 # =============================================================================
 
 resource "zitadel_project" "cassiopeia" {
-  name = "cassiopeia"
+  name   = "cassiopeia"
+  org_id = var.zitadel_org_id
 }
 
 resource "zitadel_application_oidc" "cassiopeia" {
   project_id = zitadel_project.cassiopeia.id
+  org_id     = var.zitadel_org_id
   name       = "cassiopeia"
 
   redirect_uris           = var.oidc_redirect_uris
@@ -212,6 +215,7 @@ resource "google_cloud_run_v2_service" "cassiopeia" {
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
 
+  deletion_protection = false
   invoker_iam_disabled = true
 
   template {
