@@ -1,0 +1,32 @@
+# Git
+.git/
+
+# Secrets and config
+.env
+infra/.env
+*.tfvars
+*.tfstate
+*.tfstate.backup
+.terraform/
+backend.conf
+
+# Python
+__pycache__/
+*.py[cod]
+backend/.venv/
+*.egg-info/
+
+# Node
+frontend/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Project docs
+plan.md
+progress.md
+spec.md
+CLAUDE.md
+.claude/
