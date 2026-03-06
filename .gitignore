@@ -13,6 +13,10 @@ build/
 # Environment
 .env
 terraform.tfvars
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
 
 # Project docs (local only)
 plan.md

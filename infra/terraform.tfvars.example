@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and fill in the values
+
+project_id     = "your-gcp-project-id"
+region         = "europe-west4"
+zitadel_domain = "my-instance.zitadel.cloud"
+
+# Update after first deploy with the Cloud Run URL
+oidc_redirect_uris             = ["http://localhost:8080/auth/callback"]
+oidc_post_logout_redirect_uris = ["http://localhost:8080"]
