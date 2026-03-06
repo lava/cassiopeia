@@ -9,6 +9,20 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cassiopeia"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build: .
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://cassiopeia:local@db:5432/cassiopeia
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:
