@@ -1,7 +1,22 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getAuth } from '$lib/auth.svelte';
 
 	const auth = getAuth();
+
+	let ouraConnected = $state(false);
+
+	onMount(async () => {
+		try {
+			const resp = await fetch('/api/import/oura/token');
+			if (resp.ok) {
+				const data = await resp.json();
+				ouraConnected = data.configured;
+			}
+		} catch {
+			// ignore
+		}
+	});
 </script>
 
 <div class="page">
@@ -34,7 +49,11 @@
 			</div>
 			<div class="service-row">
 				<span class="service-name">Oura</span>
-				<span class="service-status pending">Demnächst</span>
+				{#if ouraConnected}
+					<span class="service-status connected">Verbunden</span>
+				{:else}
+					<a href="/dashboard/import" class="service-status pending">Nicht verbunden</a>
+				{/if}
 			</div>
 			<div class="service-row">
 				<span class="service-name">Garmin</span>

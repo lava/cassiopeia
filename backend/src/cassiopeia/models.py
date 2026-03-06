@@ -56,6 +56,19 @@ class DailyMetric(Base):
     )
 
 
+class UserToken(Base):
+    __tablename__ = "user_tokens"
+    __table_args__ = (UniqueConstraint("user_sub", "service"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_sub: Mapped[str] = mapped_column(String, nullable=False)
+    service: Mapped[str] = mapped_column(String, nullable=False)
+    token: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
 class RawImport(Base):
     __tablename__ = "raw_imports"
 

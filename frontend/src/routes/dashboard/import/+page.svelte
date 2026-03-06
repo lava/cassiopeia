@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { ImportResult } from '$lib/types';
 
 	let file: File | null = $state(null);
@@ -6,6 +7,94 @@
 	let result: ImportResult | null = $state(null);
 	let error: string | null = $state(null);
 	let dragover = $state(false);
+
+	let ouraTokenConfigured = $state(false);
+	let ouraTokenInput = $state('');
+	let ouraTokenSaving = $state(false);
+	let ouraTokenError: string | null = $state(null);
+	let ouraSyncing = $state(false);
+	let ouraResult: ImportResult | null = $state(null);
+	let ouraError: string | null = $state(null);
+	let ouraDays = $state(30);
+
+	onMount(async () => {
+		try {
+			const resp = await fetch('/api/import/oura/token');
+			if (resp.ok) {
+				const data = await resp.json();
+				ouraTokenConfigured = data.configured;
+			}
+		} catch {
+			// ignore
+		}
+	});
+
+	async function saveOuraToken() {
+		if (!ouraTokenInput.trim()) return;
+		ouraTokenSaving = true;
+		ouraTokenError = null;
+
+		try {
+			const resp = await fetch('/api/import/oura/token', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ token: ouraTokenInput.trim() })
+			});
+			if (!resp.ok) {
+				const body = await resp.json().catch(() => null);
+				throw new Error(body?.detail || 'Speichern fehlgeschlagen');
+			}
+			ouraTokenConfigured = true;
+			ouraTokenInput = '';
+		} catch (e) {
+			ouraTokenError = e instanceof Error ? e.message : 'Speichern fehlgeschlagen';
+		} finally {
+			ouraTokenSaving = false;
+		}
+	}
+
+	async function deleteOuraToken() {
+		try {
+			await fetch('/api/import/oura/token', { method: 'DELETE' });
+			ouraTokenConfigured = false;
+			ouraResult = null;
+			ouraError = null;
+		} catch {
+			// ignore
+		}
+	}
+
+	async function syncOura() {
+		ouraSyncing = true;
+		ouraResult = null;
+		ouraError = null;
+
+		try {
+			const end = new Date();
+			const start = new Date();
+			start.setDate(end.getDate() - ouraDays);
+
+			const params = new URLSearchParams({
+				from: start.toISOString().slice(0, 10),
+				to: end.toISOString().slice(0, 10)
+			});
+
+			const response = await fetch(`/api/import/oura/sync?${params}`, {
+				method: 'POST'
+			});
+			if (!response.ok) {
+				const body = await response.json().catch(() => null);
+				throw new Error(
+					body?.detail || `Sync fehlgeschlagen: ${response.status} ${response.statusText}`
+				);
+			}
+			ouraResult = (await response.json()) as ImportResult;
+		} catch (e) {
+			ouraError = e instanceof Error ? e.message : 'Sync fehlgeschlagen';
+		} finally {
+			ouraSyncing = false;
+		}
+	}
 
 	function handleFileChange(e: Event) {
 		const input = e.target as HTMLInputElement;
@@ -58,7 +147,7 @@
 <div class="page">
 	<div class="page-header">
 		<h2>Daten importieren</h2>
-		<p class="page-desc">Bearable-CSV hochladen, um Gesundheitsdaten zu importieren.</p>
+		<p class="page-desc">Gesundheitsdaten aus verschiedenen Quellen importieren.</p>
 	</div>
 
 	<div class="card">
@@ -118,9 +207,81 @@
 		{/if}
 	</div>
 
-	<div class="card future">
-		<h3>Oura</h3>
-		<p>Automatische Synchronisation mit Oura Ring — demnächst verfügbar.</p>
+	<div class="card">
+		<h3>Oura Ring</h3>
+
+		{#if !ouraTokenConfigured}
+			<p class="card-desc">
+				Oura Personal Access Token eingeben, um Schlaf- und Bereitschaftsdaten zu
+				synchronisieren.
+			</p>
+			<div class="token-form">
+				<input
+					type="password"
+					class="token-input"
+					placeholder="Personal Access Token"
+					bind:value={ouraTokenInput}
+				/>
+				<button
+					class="token-save-btn"
+					onclick={saveOuraToken}
+					disabled={!ouraTokenInput.trim() || ouraTokenSaving}
+				>
+					{ouraTokenSaving ? 'Speichert...' : 'Speichern'}
+				</button>
+			</div>
+			{#if ouraTokenError}
+				<div class="result error-msg">{ouraTokenError}</div>
+			{/if}
+		{:else}
+			<p class="card-desc">
+				Schlaf-, Bereitschafts- und Aktivitätsdaten vom Oura Ring synchronisieren.
+			</p>
+
+			<div class="sync-controls">
+				<label class="days-label">
+					Letzte
+					<select bind:value={ouraDays}>
+						<option value={7}>7 Tage</option>
+						<option value={30}>30 Tage</option>
+						<option value={90}>90 Tage</option>
+						<option value={180}>180 Tage</option>
+						<option value={365}>1 Jahr</option>
+					</select>
+				</label>
+				<button class="sync-btn" onclick={syncOura} disabled={ouraSyncing}>
+					{#if ouraSyncing}
+						Synchronisiere...
+					{:else}
+						Synchronisieren
+					{/if}
+				</button>
+			</div>
+
+			{#if ouraResult}
+				<div class="result success">
+					<strong>{ouraResult.imported}</strong> Datenpunkte importiert
+					{#if ouraResult.skipped > 0}
+						&middot; <strong>{ouraResult.skipped}</strong> übersprungen
+					{/if}
+					{#if ouraResult.errors.length > 0}
+						<div class="result-errors">
+							{#each ouraResult.errors as err}
+								<div>{err}</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if ouraError}
+				<div class="result error-msg">{ouraError}</div>
+			{/if}
+
+			<button class="token-remove-btn" onclick={deleteOuraToken}>
+				Token entfernen
+			</button>
+		{/if}
 	</div>
 
 	<div class="card future">
@@ -165,6 +326,12 @@
 		font-size: 1.05rem;
 		font-weight: 650;
 		color: #111827;
+	}
+
+	.card-desc {
+		margin: 0 0 1rem;
+		color: #6b7280;
+		font-size: 0.9rem;
 	}
 
 	.card.future {
@@ -289,6 +456,112 @@
 		cursor: not-allowed;
 	}
 
+	.token-form {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.token-input {
+		flex: 1;
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		border: 1px solid #d1d5db;
+		font-size: 0.9rem;
+		color: #374151;
+	}
+
+	.token-input:focus {
+		outline: none;
+		border-color: #6d28d9;
+		box-shadow: 0 0 0 2px rgba(109, 40, 217, 0.1);
+	}
+
+	.token-save-btn {
+		padding: 0.5rem 1.25rem;
+		border-radius: 8px;
+		border: none;
+		background: #1f2937;
+		color: #fff;
+		cursor: pointer;
+		font-size: 0.9rem;
+		font-weight: 600;
+		transition: all 0.15s ease;
+		white-space: nowrap;
+	}
+
+	.token-save-btn:hover:not(:disabled) {
+		background: #374151;
+	}
+
+	.token-save-btn:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+
+	.token-remove-btn {
+		margin-top: 1rem;
+		padding: 0.4rem 0.75rem;
+		border-radius: 8px;
+		border: 1px solid #e5e7eb;
+		background: #fff;
+		color: #dc2626;
+		cursor: pointer;
+		font-size: 0.8rem;
+		font-weight: 500;
+		transition: all 0.15s ease;
+	}
+
+	.token-remove-btn:hover {
+		background: #fef2f2;
+		border-color: #fecaca;
+	}
+
+	.sync-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.days-label {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		color: #374151;
+		font-size: 0.9rem;
+	}
+
+	.days-label select {
+		padding: 0.4rem 0.6rem;
+		border-radius: 8px;
+		border: 1px solid #d1d5db;
+		background: #fff;
+		color: #374151;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.sync-btn {
+		margin-left: auto;
+		padding: 0.5rem 1.25rem;
+		border-radius: 10px;
+		border: none;
+		background: #1f2937;
+		color: #fff;
+		cursor: pointer;
+		font-size: 0.9rem;
+		font-weight: 600;
+		transition: all 0.15s ease;
+	}
+
+	.sync-btn:hover:not(:disabled) {
+		background: #374151;
+	}
+
+	.sync-btn:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+
 	.result {
 		margin-top: 1rem;
 		padding: 0.75rem 1rem;
@@ -317,6 +590,10 @@
 	@media (max-width: 768px) {
 		.page {
 			padding: 1rem 1.25rem;
+		}
+
+		.token-form {
+			flex-direction: column;
 		}
 	}
 </style>
