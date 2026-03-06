@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+
+# Node
+node_modules/
+.svelte-kit/
+build/
+
+# Environment
+.env
+terraform.tfvars
+
+# Project docs (local only)
+plan.md
+progress.md
+spec.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
