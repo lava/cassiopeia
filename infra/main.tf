@@ -113,7 +113,9 @@ resource "zitadel_application_oidc" "cassiopeia" {
 # Store OIDC credentials in Secret Manager for Cloud Run
 resource "google_secret_manager_secret" "oidc_client_id" {
   secret_id = "cassiopeia-oidc-client-id"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
   depends_on = [google_project_service.required_apis]
 }
 
@@ -124,7 +126,9 @@ resource "google_secret_manager_secret_version" "oidc_client_id" {
 
 resource "google_secret_manager_secret" "oidc_client_secret" {
   secret_id = "cassiopeia-oidc-client-secret"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
   depends_on = [google_project_service.required_apis]
 }
 
