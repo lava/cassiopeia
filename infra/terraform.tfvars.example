@@ -2,7 +2,8 @@
 
 project_id     = "your-gcp-project-id"
 region         = "europe-west4"
-zitadel_domain = "my-instance.zitadel.cloud"
+neon_org_id    = "org-xxx-yyy-12345678"
+zitadel_domain = "my-instance.us1.zitadel.cloud"
 
 # Update after first deploy with the Cloud Run URL
 oidc_redirect_uris             = ["http://localhost:8080/auth/callback"]

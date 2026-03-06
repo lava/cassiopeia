@@ -9,6 +9,11 @@ variable "region" {
   default     = "europe-west4"
 }
 
+variable "neon_org_id" {
+  description = "Neon organization ID"
+  type        = string
+}
+
 variable "zitadel_domain" {
   description = "Zitadel instance domain (e.g. my-instance-abc123.zitadel.cloud)"
   type        = string

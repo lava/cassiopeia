@@ -56,6 +56,7 @@ resource "google_project_service" "required_apis" {
 
 resource "neon_project" "cassiopeia" {
   name      = "cassiopeia"
+  org_id    = var.neon_org_id
   region_id = "aws-eu-central-1"
 
   branch {
