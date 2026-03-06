@@ -14,10 +14,10 @@ if config.config_file_name is not None:
 
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-# Import your models' MetaData here for autogenerate support
-# from cassiopeia.models import Base
-# target_metadata = Base.metadata
-target_metadata = None
+from cassiopeia.db import Base
+import cassiopeia.models  # noqa: F401 — ensure models are registered
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

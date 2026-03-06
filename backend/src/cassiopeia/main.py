@@ -1,11 +1,39 @@
+import logging
+import subprocess
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-app = FastAPI(title="Cassiopeia")
+from cassiopeia.db import async_session_maker
+from cassiopeia.seed import seed_default_metrics
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Run Alembic migrations on startup
+    logger.info("Running database migrations...")
+    subprocess.run(
+        ["alembic", "upgrade", "head"],
+        cwd=Path(__file__).resolve().parent.parent.parent.parent,
+        check=True,
+    )
+    logger.info("Migrations complete.")
+
+    # Seed default metrics
+    async with async_session_maker() as session:
+        await seed_default_metrics(session)
+    logger.info("Default metrics seeded.")
+
+    yield
+
+
+app = FastAPI(title="Cassiopeia", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
