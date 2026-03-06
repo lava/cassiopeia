@@ -71,7 +71,7 @@
 			</div>
 			<div class="service-row">
 				<span class="service-name">Garmin</span>
-				<span class="service-status pending">Demnächst</span>
+				<span class="service-status connected">CSV-Import</span>
 			</div>
 		</div>
 
