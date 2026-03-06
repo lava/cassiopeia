@@ -19,5 +19,17 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
+    @property
+    def clean_database_url(self) -> str:
+        """Return database URL with sslmode stripped (handled via connect_args)."""
+        url = self.database_url
+        for pattern in ["?sslmode=require&", "?sslmode=require", "&sslmode=require"]:
+            url = url.replace(pattern, "?" if pattern.endswith("&") else "")
+        return url
+
+    @property
+    def needs_ssl(self) -> bool:
+        return "sslmode=" in self.database_url
+
 
 settings = Settings()

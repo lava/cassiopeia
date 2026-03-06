@@ -9,7 +9,11 @@ from sqlalchemy.orm import DeclarativeBase
 
 from cassiopeia.config import settings
 
-engine = create_async_engine(settings.database_url, echo=False)
+engine = create_async_engine(
+    settings.clean_database_url,
+    echo=False,
+    connect_args={"ssl": True} if settings.needs_ssl else {},
+)
 
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 

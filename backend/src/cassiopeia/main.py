@@ -1,5 +1,4 @@
 import logging
-import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,15 +20,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Run Alembic migrations on startup
-    logger.info("Running database migrations...")
-    subprocess.run(
-        ["uv", "run", "alembic", "upgrade", "head"],
-        cwd=Path(__file__).resolve().parent.parent.parent,
-        check=True,
-    )
-    logger.info("Migrations complete.")
-
     # Seed default metrics
     async with async_session_maker() as session:
         await seed_default_metrics(session)

@@ -34,11 +34,14 @@ build:            ## Build Docker image
 push: build       ## Build and push image to Artifact Registry
 	docker push $(IMAGE)
 
-deploy: push      ## Build, push, and deploy to Cloud Run
+deploy: push migrate-prod  ## Build, push, deploy to Cloud Run, and run migrations
 	gcloud run deploy $(SERVICE) \
 		--project $(PROJECT_ID) \
 		--region $(REGION) \
 		--image $(IMAGE)
+
+migrate-prod:     ## Run database migrations against production
+	cd backend && uv run alembic upgrade head
 
 deploy-image:     ## Deploy already-pushed image to Cloud Run (no build)
 	gcloud run deploy $(SERVICE) \
