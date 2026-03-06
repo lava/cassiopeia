@@ -30,14 +30,8 @@ variable "zitadel_token" {
   sensitive   = true
 }
 
-variable "oidc_redirect_uris" {
-  description = "OIDC redirect URIs for the application"
-  type        = list(string)
-  default     = ["http://localhost:8080/auth/callback"]
-}
-
-variable "oidc_post_logout_redirect_uris" {
-  description = "OIDC post-logout redirect URIs"
-  type        = list(string)
-  default     = ["http://localhost:8080"]
+variable "app_origin" {
+  description = "Public origin of the app, no trailing slash (e.g. https://app.example.com)"
+  type        = string
+  default     = "http://localhost:8080"
 }

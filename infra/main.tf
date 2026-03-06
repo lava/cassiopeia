@@ -104,8 +104,8 @@ resource "zitadel_application_oidc" "cassiopeia" {
   org_id     = var.zitadel_org_id
   name       = "cassiopeia"
 
-  redirect_uris           = var.oidc_redirect_uris
-  post_logout_redirect_uris = var.oidc_post_logout_redirect_uris
+  redirect_uris             = ["${var.app_origin}/api/auth/callback"]
+  post_logout_redirect_uris = ["${var.app_origin}"]
   response_types          = ["OIDC_RESPONSE_TYPE_CODE"]
   grant_types             = ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
   app_type                = "OIDC_APP_TYPE_WEB"
@@ -232,6 +232,11 @@ resource "google_cloud_run_v2_service" "cassiopeia" {
             version = "latest"
           }
         }
+      }
+
+      env {
+        name  = "BASE_URL"
+        value = var.app_origin
       }
 
       env {
