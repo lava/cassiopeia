@@ -24,7 +24,8 @@ terraform {
 provider "neon" {}
 
 provider "zitadel" {
-  domain = var.zitadel_domain
+  domain       = var.zitadel_domain
+  access_token = var.zitadel_token
 }
 
 provider "google" {

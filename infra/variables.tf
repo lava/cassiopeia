@@ -14,6 +14,12 @@ variable "zitadel_domain" {
   type        = string
 }
 
+variable "zitadel_token" {
+  description = "Zitadel Personal Access Token"
+  type        = string
+  sensitive   = true
+}
+
 variable "oidc_redirect_uris" {
   description = "OIDC redirect URIs for the application"
   type        = list(string)
