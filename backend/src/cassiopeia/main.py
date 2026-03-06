@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Running database migrations...")
     subprocess.run(
         ["alembic", "upgrade", "head"],
-        cwd=Path(__file__).resolve().parent.parent.parent.parent,
+        cwd=Path(__file__).resolve().parent.parent.parent,
         check=True,
     )
     logger.info("Migrations complete.")
@@ -50,6 +50,6 @@ async def health_check() -> dict[str, str]:
 
 
 # Serve built frontend static files (must be last so it doesn't shadow API routes)
-_static_dir = Path(__file__).resolve().parent.parent.parent.parent / "static"
+_static_dir = Path(__file__).resolve().parent.parent.parent / "static"
 if _static_dir.is_dir():
     app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")
