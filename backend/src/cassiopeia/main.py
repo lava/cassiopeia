@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from cassiopeia.db import async_session_maker
+from cassiopeia.routers.import_ import router as import_router
 from cassiopeia.seed import seed_default_metrics
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Cassiopeia", lifespan=lifespan)
+
+app.include_router(import_router)
 
 app.add_middleware(
     CORSMiddleware,

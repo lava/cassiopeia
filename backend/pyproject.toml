@@ -20,6 +20,7 @@ dev = [
     "pytest-asyncio",
     "httpx",
     "mypy",
+    "pandas-stubs>=3.0.0.260204",
 ]
 
 [build-system]
