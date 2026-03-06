@@ -30,5 +30,13 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.mypy]
+mypy_path = "src"
+packages = ["cassiopeia"]
+
+[[tool.mypy.overrides]]
+module = "authlib.*"
+ignore_missing_imports = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/cassiopeia"]
