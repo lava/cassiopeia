@@ -14,14 +14,14 @@
 <div class="metric-toggles">
 	{#each metrics as metric}
 		{@const isActive = activeMetrics.includes(metric.name)}
+		{@const color = colors[metric.name] || '#888'}
 		<button
-			class="metric-pill"
+			class="pill"
 			class:active={isActive}
-			style={isActive
-				? `background-color: ${colors[metric.name] || '#888'}; color: #fff; border-color: ${colors[metric.name] || '#888'};`
-				: `border-color: ${colors[metric.name] || '#888'}; color: ${colors[metric.name] || '#888'};`}
+			style:--pill-color={color}
 			onclick={() => onToggle(metric.name)}
 		>
+			<span class="dot"></span>
 			{metric.display_name}
 		</button>
 	{/each}
@@ -31,24 +31,44 @@
 	.metric-toggles {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: 0.5rem;
 		justify-content: center;
 	}
 
-	.metric-pill {
-		padding: 6px 16px;
-		border-radius: 20px;
-		border: 2px solid;
+	.pill {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.4rem 0.9rem;
+		border-radius: 99px;
+		border: 2px solid var(--pill-color);
 		background: transparent;
+		color: var(--pill-color);
 		cursor: pointer;
-		font-size: 0.9rem;
+		font-size: 0.85rem;
 		font-weight: 500;
-		transition:
-			background-color 0.15s,
-			color 0.15s;
+		transition: all 0.15s ease;
+		-webkit-tap-highlight-color: transparent;
 	}
 
-	.metric-pill:hover {
+	.pill:hover {
 		opacity: 0.85;
+	}
+
+	.pill:active {
+		transform: scale(0.96);
+	}
+
+	.pill.active {
+		background: var(--pill-color);
+		color: #fff;
+	}
+
+	.dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: currentColor;
+		flex-shrink: 0;
 	}
 </style>

@@ -1,6 +1,12 @@
 <script lang="ts">
 	import type { ImportResult } from '$lib/types';
 
+	interface Props {
+		onImported?: () => void;
+	}
+
+	let { onImported }: Props = $props();
+
 	let open = $state(false);
 	let file: File | null = $state(null);
 	let uploading = $state(false);
@@ -31,6 +37,7 @@
 				throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
 			}
 			result = (await response.json()) as ImportResult;
+			onImported?.();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Upload failed';
 		} finally {
@@ -45,26 +52,28 @@
 	</button>
 
 	{#if open}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="backdrop" onclick={() => (open = false)} onkeydown={() => {}}></div>
 		<div class="import-panel">
-			<h3>Bearable CSV Import</h3>
+			<h3>Bearable CSV importieren</h3>
 			<div class="file-row">
 				<input type="file" accept=".csv" onchange={handleFileChange} />
-				<button onclick={upload} disabled={!file || uploading}>
-					{uploading ? 'Uploading...' : 'Upload'}
-				</button>
 			</div>
+			<button class="upload-btn" onclick={upload} disabled={!file || uploading}>
+				{uploading ? 'Wird hochgeladen...' : 'Hochladen'}
+			</button>
 
 			{#if result}
-				<div class="result">
-					<p>Imported: {result.imported}, Skipped: {result.skipped}</p>
+				<div class="result success">
+					{result.imported} importiert, {result.skipped} übersprungen
 					{#if result.errors.length > 0}
-						<p class="errors">Errors: {result.errors.join(', ')}</p>
+						<div class="result-errors">{result.errors.join(', ')}</div>
 					{/if}
 				</div>
 			{/if}
 
 			{#if error}
-				<p class="errors">{error}</p>
+				<div class="result error-msg">{error}</div>
 			{/if}
 		</div>
 	{/if}
@@ -76,58 +85,95 @@
 	}
 
 	.import-btn {
-		padding: 6px 16px;
-		border-radius: 6px;
-		border: 1px solid #ccc;
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		border: 1px solid #d1d5db;
 		background: #fff;
 		cursor: pointer;
-		font-size: 0.9rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: #374151;
+		transition: all 0.15s ease;
+	}
+
+	.import-btn:hover {
+		background: #f3f4f6;
+	}
+
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 9;
 	}
 
 	.import-panel {
 		position: absolute;
 		right: 0;
-		top: 100%;
-		margin-top: 4px;
+		top: calc(100% + 0.5rem);
 		background: #fff;
-		border: 1px solid #ddd;
-		border-radius: 8px;
-		padding: 16px;
+		border: 1px solid #e5e7eb;
+		border-radius: 12px;
+		padding: 1.25rem;
 		min-width: 320px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 		z-index: 10;
 	}
 
 	.import-panel h3 {
-		margin: 0 0 12px;
+		margin: 0 0 1rem;
 		font-size: 1rem;
+		font-weight: 600;
 	}
 
 	.file-row {
-		display: flex;
-		gap: 8px;
-		align-items: center;
+		margin-bottom: 0.75rem;
 	}
 
-	.file-row button {
-		padding: 4px 12px;
-		border-radius: 4px;
-		border: 1px solid #ccc;
-		background: #f5f5f5;
+	.file-row input {
+		font-size: 0.875rem;
+	}
+
+	.upload-btn {
+		width: 100%;
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		border: none;
+		background: #1f2937;
+		color: #fff;
 		cursor: pointer;
+		font-size: 0.875rem;
+		font-weight: 500;
+		transition: background 0.15s ease;
 	}
 
-	.file-row button:disabled {
-		opacity: 0.5;
+	.upload-btn:hover:not(:disabled) {
+		background: #374151;
+	}
+
+	.upload-btn:disabled {
+		opacity: 0.4;
 		cursor: not-allowed;
 	}
 
 	.result {
-		margin-top: 12px;
-		font-size: 0.9rem;
+		margin-top: 0.75rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		font-size: 0.875rem;
 	}
 
-	.errors {
-		color: #c00;
+	.result.success {
+		background: #f0fdf4;
+		color: #166534;
+	}
+
+	.result-errors {
+		margin-top: 0.25rem;
+		color: #dc2626;
+	}
+
+	.error-msg {
+		background: #fef2f2;
+		color: #dc2626;
 	}
 </style>

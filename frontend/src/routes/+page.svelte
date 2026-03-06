@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { apiFetch } from '$lib/api';
 	import type { MetricDefinition, MetricsDataResponse } from '$lib/types';
 	import ChartComponent from '$lib/components/Chart.svelte';
@@ -14,14 +15,10 @@
 		'#42d4f4',
 		'#f032e6',
 		'#bfef45',
-		'#fabed4',
 		'#469990',
 		'#dcbeff',
 		'#9a6324',
-		'#800000',
-		'#aaffc3',
-		'#808000',
-		'#000075'
+		'#800000'
 	];
 
 	const GRANULARITIES = [
@@ -49,11 +46,12 @@
 	let activeMetrics: string[] = $state([]);
 	let granularity: string = $state('day');
 	let currentYear: number = $state(new Date().getFullYear());
-	let currentMonth: number = $state(new Date().getMonth()); // 0-indexed
+	let currentMonth: number = $state(new Date().getMonth());
 
 	let dates: string[] = $state([]);
 	let series: Record<string, (number | null)[]> = $state({});
 	let loading = $state(false);
+	let fetchError: string | null = $state(null);
 
 	let metricColors: Record<string, string> = $derived(
 		Object.fromEntries(metrics.map((m, i) => [m.name, COLOR_PALETTE[i % COLOR_PALETTE.length]]))
@@ -98,44 +96,56 @@
 		}
 	}
 
-	// Fetch metric definitions on mount
-	$effect(() => {
-		apiFetch<MetricDefinition[]>('/metrics').then((data) => {
-			metrics = data;
-			activeMetrics = data.filter((m) => m.is_default).map((m) => m.name);
-		});
-	});
-
-	// Fetch data when params change
-	$effect(() => {
+	async function fetchData() {
 		if (activeMetrics.length === 0) {
 			dates = [];
 			series = {};
 			return;
 		}
-
-		const metricsParam = activeMetrics.join(',');
-		const { from, to } = dateRange;
-		const gran = granularity;
-
 		loading = true;
-		apiFetch<MetricsDataResponse>(
-			`/metrics/data?metrics=${metricsParam}&from=${from}&to=${to}&granularity=${gran}`
-		)
-			.then((data) => {
-				dates = data.dates;
-				series = data.series;
-			})
-			.finally(() => {
-				loading = false;
-			});
+		fetchError = null;
+		try {
+			const metricsParam = activeMetrics.join(',');
+			const { from, to } = dateRange;
+			const data = await apiFetch<MetricsDataResponse>(
+				`/metrics/data?metrics=${metricsParam}&from=${from}&to=${to}&granularity=${granularity}`
+			);
+			dates = data.dates;
+			series = data.series;
+		} catch (e) {
+			fetchError = e instanceof Error ? e.message : 'Failed to load data';
+			console.error('Failed to fetch metrics data:', e);
+		} finally {
+			loading = false;
+		}
+	}
+
+	// Refetch when params change
+	$effect(() => {
+		// Touch reactive deps to track them
+		const _metrics = activeMetrics;
+		const _range = dateRange;
+		const _gran = granularity;
+		// Use untrack for the actual fetch to avoid circular deps
+		fetchData();
+	});
+
+	onMount(async () => {
+		try {
+			const data = await apiFetch<MetricDefinition[]>('/metrics');
+			metrics = data;
+			activeMetrics = data.filter((m) => m.is_default).map((m) => m.name);
+		} catch (e) {
+			console.error('Failed to fetch metric definitions:', e);
+			fetchError = e instanceof Error ? e.message : 'Failed to load metrics';
+		}
 	});
 </script>
 
 <div class="dashboard">
 	<header>
 		<h1>Cassiopeia</h1>
-		<ImportPanel />
+		<ImportPanel onImported={fetchData} />
 	</header>
 
 	<div class="controls">
@@ -152,121 +162,157 @@
 		</div>
 
 		<div class="time-nav">
-			<button class="nav-arrow" onclick={prevMonth}>&lsaquo;</button>
+			<button class="nav-btn" onclick={prevMonth}>&lsaquo;</button>
 			<span class="month-label">{displayMonth}</span>
-			<button class="nav-arrow" onclick={nextMonth}>&rsaquo;</button>
+			<button class="nav-btn" onclick={nextMonth}>&rsaquo;</button>
 		</div>
 	</div>
 
 	<div class="chart-area">
 		{#if loading}
-			<div class="loading">Loading...</div>
+			<div class="overlay">Laden...</div>
+		{:else if fetchError}
+			<div class="overlay error">{fetchError}</div>
+		{:else if dates.length === 0 && metrics.length > 0}
+			<div class="overlay muted">Keine Daten für diesen Zeitraum</div>
 		{/if}
 		<ChartComponent {dates} {series} {activeMetrics} {metricColors} {metricLabels} />
 	</div>
 
-	<div class="toggles">
-		<MetricToggle {metrics} {activeMetrics} colors={metricColors} onToggle={toggleMetric} />
-	</div>
+	{#if metrics.length > 0}
+		<div class="toggles">
+			<MetricToggle {metrics} {activeMetrics} colors={metricColors} onToggle={toggleMetric} />
+		</div>
+	{/if}
 </div>
 
 <style>
 	.dashboard {
 		max-width: 900px;
 		margin: 0 auto;
-		padding: 16px 20px;
+		padding: 1rem 1.25rem;
 	}
 
 	header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 20px;
+		margin-bottom: 1.5rem;
 	}
 
 	header h1 {
 		margin: 0;
-		font-size: 1.5rem;
-		font-weight: 600;
+		font-size: 1.6rem;
+		font-weight: 700;
+		letter-spacing: -0.02em;
 	}
 
 	.controls {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 16px;
+		margin-bottom: 1rem;
 		flex-wrap: wrap;
-		gap: 12px;
+		gap: 0.75rem;
 	}
 
 	.granularity-tabs {
 		display: flex;
-		gap: 0;
+		border-radius: 8px;
+		overflow: hidden;
+		border: 1px solid #d1d5db;
 	}
 
 	.tab {
-		padding: 6px 16px;
-		border: 1px solid #ccc;
+		padding: 0.5rem 1.25rem;
+		border: none;
 		background: #fff;
 		cursor: pointer;
-		font-size: 0.9rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: #374151;
+		transition: all 0.15s ease;
 	}
 
-	.tab:first-child {
-		border-radius: 6px 0 0 6px;
+	.tab:not(:last-child) {
+		border-right: 1px solid #d1d5db;
 	}
 
-	.tab:last-child {
-		border-radius: 0 6px 6px 0;
-	}
-
-	.tab:not(:first-child) {
-		border-left: none;
+	.tab:hover {
+		background: #f3f4f6;
 	}
 
 	.tab.active {
-		background: #333;
+		background: #1f2937;
 		color: #fff;
-		border-color: #333;
 	}
 
 	.time-nav {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 0.5rem;
 	}
 
-	.nav-arrow {
-		padding: 4px 10px;
-		border: 1px solid #ccc;
-		border-radius: 4px;
+	.nav-btn {
+		width: 2.25rem;
+		height: 2.25rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid #d1d5db;
+		border-radius: 8px;
 		background: #fff;
 		cursor: pointer;
-		font-size: 1.2rem;
-		line-height: 1;
+		font-size: 1.25rem;
+		color: #374151;
+		transition: all 0.15s ease;
+	}
+
+	.nav-btn:hover {
+		background: #f3f4f6;
+	}
+
+	.nav-btn:active {
+		background: #e5e7eb;
 	}
 
 	.month-label {
-		min-width: 140px;
+		min-width: 10rem;
 		text-align: center;
-		font-weight: 500;
+		font-weight: 600;
+		font-size: 1rem;
+		color: #111827;
 	}
 
 	.chart-area {
 		position: relative;
-		margin-bottom: 20px;
+		background: #fff;
+		border: 1px solid #e5e7eb;
+		border-radius: 12px;
+		padding: 1rem;
+		margin-bottom: 1.25rem;
+		min-height: 250px;
 	}
 
-	.loading {
+	.overlay {
 		position: absolute;
 		top: 50%;
 		left: 50%;
 		transform: translate(-50%, -50%);
-		color: #999;
+		color: #6b7280;
+		font-size: 0.95rem;
 		z-index: 1;
 	}
 
+	.overlay.error {
+		color: #dc2626;
+	}
+
+	.overlay.muted {
+		color: #9ca3af;
+	}
+
 	.toggles {
-		margin-top: 8px;
+		margin-top: 0.25rem;
 	}
 </style>
