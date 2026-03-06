@@ -41,7 +41,7 @@ deploy: push migrate-prod  ## Build, push, deploy to Cloud Run, and run migratio
 		--image $(IMAGE)
 
 migrate-prod:     ## Run database migrations against production
-	cd backend && uv run alembic upgrade head
+	cd backend && DATABASE_URL=$$(gcloud secrets versions access latest --secret=cassiopeia-database-url --project=$(PROJECT_ID)) uv run alembic upgrade head
 
 deploy-image:     ## Deploy already-pushed image to Cloud Run (no build)
 	gcloud run deploy $(SERVICE) \
