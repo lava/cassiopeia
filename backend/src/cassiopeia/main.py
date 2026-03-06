@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Run Alembic migrations on startup
     logger.info("Running database migrations...")
     subprocess.run(
-        ["alembic", "upgrade", "head"],
+        ["uv", "run", "alembic", "upgrade", "head"],
         cwd=Path(__file__).resolve().parent.parent.parent,
         check=True,
     )
@@ -36,6 +36,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Default metrics seeded.")
 
     yield
+
+
+
 
 
 app = FastAPI(title="Cassiopeia", lifespan=lifespan)
