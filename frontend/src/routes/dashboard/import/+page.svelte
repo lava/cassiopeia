@@ -2,11 +2,62 @@
 	import { onMount } from 'svelte';
 	import type { ImportResult } from '$lib/types';
 
-	let file: File | null = $state(null);
-	let uploading = $state(false);
-	let result: ImportResult | null = $state(null);
-	let error: string | null = $state(null);
-	let dragover = $state(false);
+	interface UploadState {
+		file: File | null;
+		uploading: boolean;
+		result: ImportResult | null;
+		error: string | null;
+		dragover: boolean;
+	}
+
+	function createUploadState(): UploadState {
+		return { file: null, uploading: false, result: null, error: null, dragover: false };
+	}
+
+	let bearable: UploadState = $state(createUploadState());
+	let garmin: UploadState = $state(createUploadState());
+
+	function handleFileChange(state: UploadState, e: Event) {
+		const input = e.target as HTMLInputElement;
+		state.file = input.files?.[0] ?? null;
+		state.result = null;
+		state.error = null;
+	}
+
+	function handleDrop(state: UploadState, e: DragEvent) {
+		e.preventDefault();
+		state.dragover = false;
+		const f = e.dataTransfer?.files?.[0];
+		if (f && f.name.endsWith('.csv')) {
+			state.file = f;
+			state.result = null;
+			state.error = null;
+		}
+	}
+
+	async function upload(state: UploadState, endpoint: string) {
+		if (!state.file) return;
+		state.uploading = true;
+		state.result = null;
+		state.error = null;
+
+		try {
+			const formData = new FormData();
+			formData.append('file', state.file);
+			const response = await fetch(endpoint, {
+				method: 'POST',
+				body: formData
+			});
+			if (!response.ok) {
+				throw new Error(`Upload fehlgeschlagen: ${response.status} ${response.statusText}`);
+			}
+			state.result = (await response.json()) as ImportResult;
+		} catch (e) {
+			state.error = e instanceof Error ? e.message : 'Upload fehlgeschlagen';
+		} finally {
+			state.uploading = false;
+		}
+	}
 
 	let ouraTokenConfigured = $state(false);
 	let ouraTokenInput = $state('');
@@ -95,53 +146,6 @@
 			ouraSyncing = false;
 		}
 	}
-
-	function handleFileChange(e: Event) {
-		const input = e.target as HTMLInputElement;
-		file = input.files?.[0] ?? null;
-		result = null;
-		error = null;
-	}
-
-	function handleDrop(e: DragEvent) {
-		e.preventDefault();
-		dragover = false;
-		const f = e.dataTransfer?.files?.[0];
-		if (f && f.name.endsWith('.csv')) {
-			file = f;
-			result = null;
-			error = null;
-		}
-	}
-
-	function handleDragOver(e: DragEvent) {
-		e.preventDefault();
-		dragover = true;
-	}
-
-	async function upload() {
-		if (!file) return;
-		uploading = true;
-		result = null;
-		error = null;
-
-		try {
-			const formData = new FormData();
-			formData.append('file', file);
-			const response = await fetch('/api/import/bearable', {
-				method: 'POST',
-				body: formData
-			});
-			if (!response.ok) {
-				throw new Error(`Upload fehlgeschlagen: ${response.status} ${response.statusText}`);
-			}
-			result = (await response.json()) as ImportResult;
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Upload fehlgeschlagen';
-		} finally {
-			uploading = false;
-		}
-	}
 </script>
 
 <div class="page">
@@ -150,62 +154,68 @@
 		<p class="page-desc">Gesundheitsdaten aus verschiedenen Quellen importieren.</p>
 	</div>
 
-	<div class="card">
-		<h3>Bearable CSV</h3>
+	{#snippet uploadCard(state: UploadState, title: string, description: string, endpoint: string)}
+		<div class="card">
+			<h3>{title}</h3>
+			<p class="card-desc">{description}</p>
 
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="drop-zone"
-			class:dragover
-			class:has-file={!!file}
-			ondrop={handleDrop}
-			ondragover={handleDragOver}
-			ondragleave={() => (dragover = false)}
-		>
-			{#if file}
-				<span class="file-icon">📄</span>
-				<span class="file-name">{file.name}</span>
-				<span class="file-size">{(file.size / 1024).toFixed(0)} KB</span>
-				<button class="file-clear" onclick={() => (file = null)}>&times;</button>
-			{:else}
-				<span class="drop-icon">📥</span>
-				<span class="drop-text">CSV-Datei hierher ziehen</span>
-				<span class="drop-hint">oder</span>
-				<label class="file-select-btn">
-					Datei auswählen
-					<input type="file" accept=".csv" onchange={handleFileChange} hidden />
-				</label>
-			{/if}
-		</div>
-
-		<button class="upload-btn" onclick={upload} disabled={!file || uploading}>
-			{#if uploading}
-				Wird importiert...
-			{:else}
-				Importieren
-			{/if}
-		</button>
-
-		{#if result}
-			<div class="result success">
-				<strong>{result.imported}</strong> Datenpunkte importiert
-				{#if result.skipped > 0}
-					&middot; <strong>{result.skipped}</strong> übersprungen
-				{/if}
-				{#if result.errors.length > 0}
-					<div class="result-errors">
-						{#each result.errors as err}
-							<div>{err}</div>
-						{/each}
-					</div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="drop-zone"
+				class:dragover={state.dragover}
+				class:has-file={!!state.file}
+				ondrop={(e: DragEvent) => handleDrop(state, e)}
+				ondragover={(e: DragEvent) => { e.preventDefault(); state.dragover = true; }}
+				ondragleave={() => (state.dragover = false)}
+			>
+				{#if state.file}
+					<span class="file-icon">📄</span>
+					<span class="file-name">{state.file.name}</span>
+					<span class="file-size">{(state.file.size / 1024).toFixed(0)} KB</span>
+					<button class="file-clear" onclick={() => (state.file = null)}>&times;</button>
+				{:else}
+					<span class="drop-icon">📥</span>
+					<span class="drop-text">CSV-Datei hierher ziehen</span>
+					<span class="drop-hint">oder</span>
+					<label class="file-select-btn">
+						Datei auswählen
+						<input type="file" accept=".csv" onchange={(e: Event) => handleFileChange(state, e)} hidden />
+					</label>
 				{/if}
 			</div>
-		{/if}
 
-		{#if error}
-			<div class="result error-msg">{error}</div>
-		{/if}
-	</div>
+			<button class="upload-btn" onclick={() => upload(state, endpoint)} disabled={!state.file || state.uploading}>
+				{#if state.uploading}
+					Wird importiert...
+				{:else}
+					Importieren
+				{/if}
+			</button>
+
+			{#if state.result}
+				<div class="result success">
+					<strong>{state.result.imported}</strong> Datenpunkte importiert
+					{#if state.result.skipped > 0}
+						&middot; <strong>{state.result.skipped}</strong> übersprungen
+					{/if}
+					{#if state.result.errors.length > 0}
+						<div class="result-errors">
+							{#each state.result.errors as err}
+								<div>{err}</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if state.error}
+				<div class="result error-msg">{state.error}</div>
+			{/if}
+		</div>
+	{/snippet}
+
+	{@render uploadCard(bearable, 'Bearable CSV', 'Bearable-Export im CSV-Format hochladen.', '/api/import/bearable')}
+	{@render uploadCard(garmin, 'Garmin CSV', 'GarminDB Daily-Summary-Export im CSV-Format hochladen.', '/api/import/garmin')}
 
 	<div class="card">
 		<h3>Oura Ring</h3>
@@ -283,11 +293,6 @@
 			</button>
 		{/if}
 	</div>
-
-	<div class="card future">
-		<h3>Garmin</h3>
-		<p>Garmin Connect Integration — demnächst verfügbar.</p>
-	</div>
 </div>
 
 <style>
@@ -322,7 +327,7 @@
 	}
 
 	.card h3 {
-		margin: 0 0 1rem;
+		margin: 0 0 0.25rem;
 		font-size: 1.05rem;
 		font-weight: 650;
 		color: #111827;
@@ -333,6 +338,7 @@
 		color: #6b7280;
 		font-size: 0.9rem;
 	}
+
 
 	.card.future {
 		opacity: 0.6;

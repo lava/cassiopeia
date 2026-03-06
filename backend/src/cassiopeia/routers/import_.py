@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cassiopeia.db import get_db
 from cassiopeia.importers.bearable import import_bearable_csv
+from cassiopeia.importers.garmin import import_garmin_csv
 from cassiopeia.importers.oura import sync_oura
 from cassiopeia.models import UserToken
 from cassiopeia.schemas import ImportResult
@@ -32,6 +33,17 @@ async def upload_bearable_csv(
     content = await file.read()
     csv_text = content.decode("utf-8")
     return await import_bearable_csv(session, csv_text, filename=file.filename)
+
+
+@router.post("/garmin", response_model=ImportResult)
+async def upload_garmin_csv(
+    file: UploadFile,
+    session: AsyncSession = Depends(get_db),
+) -> ImportResult:
+    """Upload a GarminDB daily summary CSV export and import metrics."""
+    content = await file.read()
+    csv_text = content.decode("utf-8")
+    return await import_garmin_csv(session, csv_text, filename=file.filename)
 
 
 # --- Oura token management ---
