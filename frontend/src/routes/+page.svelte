@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { getAuth } from '$lib/auth.svelte';
+
+	const auth = getAuth();
 </script>
 
 <div class="landing">
@@ -9,13 +12,20 @@
 			Gesundheitsdaten an einem Ort. Schlaf, Stimmung, Schritte, Energie &mdash;
 			alles auf einer Zeitachse, damit Pacing einfacher wird.
 		</p>
-		<a href="/dashboard" class="cta">Öffnen &rarr;</a>
+		{#if auth.authenticated}
+			<a href="/dashboard" class="cta">Zum Dashboard &rarr;</a>
+		{:else}
+			<a href="/api/auth/login" class="cta">Anmelden &rarr;</a>
+		{/if}
 	</div>
 
 	<div class="info-cards">
 		<div class="info-card">
 			<h3>📊 Trendansicht</h3>
-			<p>Alle Metriken normalisiert auf 0–100%, übereinander auf einem Chart. Muster erkennen statt raten.</p>
+			<p>
+				Alle Metriken normalisiert auf 0–100%, übereinander auf einem Chart. Muster erkennen statt
+				raten.
+			</p>
 		</div>
 		<div class="info-card">
 			<h3>📥 Daten rein</h3>

@@ -7,8 +7,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
+from cassiopeia.config import settings
 from cassiopeia.db import async_session_maker
+from cassiopeia.routers.auth import router as auth_router
 from cassiopeia.routers.import_ import router as import_router
 from cassiopeia.routers.metrics import router as metrics_router
 from cassiopeia.seed import seed_default_metrics
@@ -37,6 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Cassiopeia", lifespan=lifespan)
 
+app.include_router(auth_router)
 app.include_router(import_router)
 app.include_router(metrics_router)
 
@@ -46,6 +50,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret,
+    session_cookie="cassiopeia_session",
+    same_site="lax",
+    https_only=False,
 )
 
 

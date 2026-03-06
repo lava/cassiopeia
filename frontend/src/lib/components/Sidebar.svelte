@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import type { User } from '$lib/auth.svelte';
 
 	interface NavItem {
 		href: string;
@@ -7,7 +8,14 @@
 		icon: string;
 	}
 
+	interface Props {
+		user: User | null;
+	}
+
+	let { user }: Props = $props();
+
 	const nav: NavItem[] = [
+		{ href: '/', label: 'Start', icon: 'home' },
 		{ href: '/dashboard', label: 'Dashboard', icon: 'chart' },
 		{ href: '/dashboard/import', label: 'Import', icon: 'import' },
 		{ href: '/dashboard/metrics', label: 'Metriken', icon: 'list' }
@@ -30,7 +38,6 @@
 	<a href="/" class="mobile-brand">Cassiopeia</a>
 </div>
 
-<!-- Sidebar -->
 {#if mobileOpen}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="mobile-backdrop" onclick={closeMobile} onkeydown={() => {}}></div>
@@ -44,15 +51,17 @@
 
 	<nav>
 		{#each nav as item}
-			{@const active = page.url.pathname === item.href}
-			<a
-				href={item.href}
-				class="nav-link"
-				class:active
-				onclick={closeMobile}
-			>
+			{@const active =
+				item.href === '/'
+					? page.url.pathname === '/'
+					: page.url.pathname.startsWith(item.href)}
+			<a href={item.href} class="nav-link" class:active onclick={closeMobile}>
 				<svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-					{#if item.icon === 'chart'}
+					{#if item.icon === 'home'}
+						<path
+							d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"
+						/>
+					{:else if item.icon === 'chart'}
 						<path d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zm5 1V7h2v4H7zm4 0V5h2v6h-2z" />
 					{:else if item.icon === 'import'}
 						<path
@@ -70,7 +79,18 @@
 	</nav>
 
 	<div class="sidebar-footer">
-		<a href="/" class="back-link">&larr; Startseite</a>
+		{#if user}
+			<a href="/account" class="user-link" onclick={closeMobile}>
+				{#if user.picture}
+					<img src={user.picture} alt="" class="avatar" />
+				{:else}
+					<span class="avatar-placeholder">
+						{user.name?.charAt(0)?.toUpperCase() || '?'}
+					</span>
+				{/if}
+				<span class="user-name">{user.name || user.email}</span>
+			</a>
+		{/if}
 	</div>
 </aside>
 
@@ -146,22 +166,56 @@
 
 	.sidebar-footer {
 		margin-top: auto;
-		padding: 1.25rem;
+		padding: 0.75rem;
 		border-top: 1px solid rgba(255, 255, 255, 0.08);
 	}
 
-	.back-link {
-		color: #6b7280;
+	.user-link {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.5rem;
+		border-radius: 8px;
 		text-decoration: none;
+		color: #d1d5db;
+		transition: all 0.15s ease;
+	}
+
+	.user-link:hover {
+		background: rgba(255, 255, 255, 0.06);
+		color: #fff;
+	}
+
+	.avatar {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+
+	.avatar-placeholder {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.15);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #fff;
+		flex-shrink: 0;
+	}
+
+	.user-name {
 		font-size: 0.825rem;
-		transition: color 0.15s ease;
+		font-weight: 500;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.back-link:hover {
-		color: #9ca3af;
-	}
-
-	/* Mobile top bar */
+	/* Mobile */
 	.mobile-bar {
 		display: none;
 	}
