@@ -141,6 +141,7 @@ async def _get_or_create_metric(
 async def import_garmin_csv(
     session: AsyncSession,
     csv_content: str,
+    user_sub: str,
     filename: str | None = None,
 ) -> ImportResult:
     """Parse a GarminDB daily summary CSV export and upsert metrics.
@@ -234,13 +235,14 @@ async def import_garmin_csv(
             )
 
             stmt = pg_insert(DailyMetric).values(
+                user_sub=user_sub,
                 date=date_val,
                 metric_id=metric_def.id,
                 raw_value=raw_float,
                 normalized=normalized,
             )
             stmt = stmt.on_conflict_do_update(
-                index_elements=["date", "metric_id"],
+                constraint="uq_daily_metrics_user_date_metric",
                 set_={"raw_value": stmt.excluded.raw_value, "normalized": stmt.excluded.normalized},
             )
             await session.execute(stmt)

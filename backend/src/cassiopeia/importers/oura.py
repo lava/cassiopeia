@@ -62,18 +62,20 @@ async def _upsert_metric(
     metric_def: MetricDefinition,
     day: date,
     raw_value: float,
+    user_sub: str,
 ) -> None:
     """Upsert a single daily metric value."""
     original_max = metric_def.original_max
     normalized = max(0.0, min(1.0, raw_value / original_max)) if original_max > 0 else 0.0
     stmt = pg_insert(DailyMetric).values(
+        user_sub=user_sub,
         date=day,
         metric_id=metric_def.id,
         raw_value=raw_value,
         normalized=normalized,
     )
     stmt = stmt.on_conflict_do_update(
-        index_elements=["date", "metric_id"],
+        constraint="uq_daily_metrics_user_date_metric",
         set_={"raw_value": stmt.excluded.raw_value, "normalized": stmt.excluded.normalized},
     )
     await session.execute(stmt)
@@ -135,6 +137,7 @@ async def sync_oura(
     access_token: str,
     start_date: date,
     end_date: date,
+    user_sub: str,
 ) -> ImportResult:
     """Fetch data from Oura API and upsert into the database.
 
@@ -200,7 +203,7 @@ async def sync_oura(
                     if metric_def is None:
                         skipped += 1
                         continue
-                    await _upsert_metric(session, metric_def, day, float(value))
+                    await _upsert_metric(session, metric_def, day, float(value), user_sub)
                     imported += 1
 
     # Store raw import record

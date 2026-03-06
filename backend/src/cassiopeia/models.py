@@ -52,12 +52,13 @@ class MetricDefinition(Base):
 class DailyMetric(Base):
     __tablename__ = "daily_metrics"
     __table_args__ = (
-        UniqueConstraint("date", "metric_id"),
-        Index("idx_daily_metrics_date", "date"),
-        Index("idx_daily_metrics_metric_date", "metric_id", "date"),
+        UniqueConstraint("user_sub", "date", "metric_id", name="uq_daily_metrics_user_date_metric"),
+        Index("idx_daily_metrics_user_date", "user_sub", "date"),
+        Index("idx_daily_metrics_user_metric_date", "user_sub", "metric_id", "date"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_sub: Mapped[str] = mapped_column(String, nullable=False)
     date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     metric_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("metric_definitions.id"), nullable=False

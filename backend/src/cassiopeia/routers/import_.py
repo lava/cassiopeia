@@ -27,23 +27,27 @@ def _get_user_sub(request: Request) -> str:
 @router.post("/bearable", response_model=ImportResult)
 async def upload_bearable_csv(
     file: UploadFile,
+    request: Request,
     session: AsyncSession = Depends(get_db),
 ) -> ImportResult:
     """Upload a Bearable CSV export and import metrics."""
+    user_sub = _get_user_sub(request)
     content = await file.read()
     csv_text = content.decode("utf-8")
-    return await import_bearable_csv(session, csv_text, filename=file.filename)
+    return await import_bearable_csv(session, csv_text, user_sub=user_sub, filename=file.filename)
 
 
 @router.post("/garmin", response_model=ImportResult)
 async def upload_garmin_csv(
     file: UploadFile,
+    request: Request,
     session: AsyncSession = Depends(get_db),
 ) -> ImportResult:
     """Upload a GarminDB daily summary CSV export and import metrics."""
+    user_sub = _get_user_sub(request)
     content = await file.read()
     csv_text = content.decode("utf-8")
-    return await import_garmin_csv(session, csv_text, filename=file.filename)
+    return await import_garmin_csv(session, csv_text, user_sub=user_sub, filename=file.filename)
 
 
 # --- Oura token management ---
@@ -134,4 +138,4 @@ async def oura_sync(
     if start is None:
         start = end - timedelta(days=30)
 
-    return await sync_oura(session, access_token, start, end)
+    return await sync_oura(session, access_token, start, end, user_sub=user_sub)

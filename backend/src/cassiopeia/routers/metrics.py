@@ -4,7 +4,7 @@ import datetime
 from enum import Enum
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -83,8 +83,16 @@ async def list_metrics(
     return [MetricDefinitionSchema.model_validate(d) for d in definitions]
 
 
+def _get_user_sub(request: Request) -> str:
+    user = request.session.get("user")
+    if not user or not user.get("sub"):
+        raise HTTPException(status_code=401, detail="Nicht authentifiziert.")
+    return user["sub"]
+
+
 @router.get("/data", response_model=MetricsDataResponse)
 async def get_metrics_data(
+    request: Request,
     metrics: Annotated[str, Query(description="Comma-separated metric names")],
     from_date: Annotated[datetime.date, Query(alias="from", description="Start date")],
     to_date: Annotated[datetime.date, Query(alias="to", description="End date")],
@@ -92,12 +100,14 @@ async def get_metrics_data(
     session: AsyncSession = Depends(get_db),
 ) -> MetricsDataResponse:
     """Return time-series data for the requested metrics and date range."""
+    user_sub = _get_user_sub(request)
     metric_names = [m.strip() for m in metrics.split(",") if m.strip()]
 
     stmt = (
         select(DailyMetric.date, MetricDefinition.name, DailyMetric.normalized)
         .join(MetricDefinition, DailyMetric.metric_id == MetricDefinition.id)
         .where(
+            DailyMetric.user_sub == user_sub,
             MetricDefinition.name.in_(metric_names),
             DailyMetric.date >= from_date,
             DailyMetric.date <= to_date,
