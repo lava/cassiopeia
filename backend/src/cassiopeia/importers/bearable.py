@@ -122,7 +122,7 @@ async def import_bearable_csv(
     raw_import = RawImport(
         source="bearable",
         filename=filename,
-        data={"rows": len(df), "columns": list(df.columns)},
+        data={"rows": len(df), "columns": list(df.columns), "raw_csv": csv_content},
     )
     session.add(raw_import)
 

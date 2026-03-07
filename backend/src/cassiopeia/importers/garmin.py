@@ -167,7 +167,7 @@ async def import_garmin_csv(
     raw_import = RawImport(
         source="garmin",
         filename=filename,
-        data={"rows": len(df), "columns": list(df.columns)},
+        data={"rows": len(df), "columns": list(df.columns), "raw_csv": csv_content},
     )
     session.add(raw_import)
 
