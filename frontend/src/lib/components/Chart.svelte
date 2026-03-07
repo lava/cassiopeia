@@ -39,11 +39,13 @@
 	function updateChart() {
 		if (!canvas) return;
 
+		const labels = [...dates];
 		const datasets = activeMetrics
 			.filter((m) => series[m])
 			.map((metric) => ({
 				label: metricLabels[metric] || metric,
-				data: series[metric],
+				// Chart.js mutates dataset arrays internally; avoid passing Svelte state proxies.
+				data: [...(series[metric] ?? [])],
 				borderColor: metricColors[metric] || '#888',
 				backgroundColor: 'transparent',
 				borderWidth: 2,
@@ -54,13 +56,13 @@
 			}));
 
 		if (chart) {
-			chart.data.labels = dates;
+			chart.data.labels = labels;
 			chart.data.datasets = datasets;
 			chart.update('none');
 		} else {
 			chart = new Chart(canvas, {
 				type: 'line',
-				data: { labels: dates, datasets },
+				data: { labels, datasets },
 				options: {
 					responsive: true,
 					maintainAspectRatio: true,
