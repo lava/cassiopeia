@@ -10,10 +10,6 @@ terraform {
       source  = "hashicorp/google-beta"
       version = "~> 7.0"
     }
-    neon = {
-      source  = "kislerdm/neon"
-      version = "~> 0.13"
-    }
     auth0 = {
       source  = "auth0/auth0"
       version = "~> 1.40"
@@ -23,10 +19,6 @@ terraform {
       version = "~> 3.0"
     }
   }
-}
-
-provider "neon" {
-  api_key = var.neon_api_key
 }
 
 provider "auth0" {
@@ -54,29 +46,6 @@ resource "google_project_service" "required_apis" {
 
   service            = each.value
   disable_on_destroy = false
-}
-
-# =============================================================================
-# Database (Neon) — DEPRECATED, kept until Turso admin DB is verified
-# =============================================================================
-
-resource "neon_project" "cassiopeia" {
-  name      = "cassiopeia"
-  org_id    = var.neon_org_id
-  region_id = "aws-eu-central-1"
-
-  branch {
-    name          = "main"
-    database_name = "cassiopeia"
-    role_name     = "cassiopeia"
-  }
-
-  default_endpoint_settings {
-    autoscaling_limit_min_cu = 0.25
-    autoscaling_limit_max_cu = 0.25
-  }
-
-  history_retention_seconds = 21600
 }
 
 # =============================================================================

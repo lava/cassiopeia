@@ -9,11 +9,6 @@ variable "region" {
   default     = "europe-west4"
 }
 
-variable "neon_org_id" {
-  description = "Neon organization ID (deprecated — kept for state)"
-  type        = string
-}
-
 variable "auth0_domain" {
   description = "Auth0 tenant domain (e.g. my-tenant.eu.auth0.com)"
   type        = string
