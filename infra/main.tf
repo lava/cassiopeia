@@ -25,7 +25,9 @@ terraform {
   }
 }
 
-provider "neon" {}
+provider "neon" {
+  api_key = var.neon_api_key
+}
 
 provider "auth0" {
   domain    = var.auth0_domain
@@ -91,6 +93,10 @@ resource "auth0_client" "cassiopeia" {
 
   grant_types     = ["authorization_code"]
   oidc_conformant = true
+
+  jwt_configuration {
+    alg = "RS256"
+  }
 }
 
 resource "auth0_client_credentials" "cassiopeia" {
