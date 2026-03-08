@@ -43,3 +43,8 @@ output "oidc_client_id" {
   value       = auth0_client.cassiopeia.client_id
   sensitive   = true
 }
+
+output "turso_org" {
+  description = "Turso organization for per-user sync databases"
+  value       = var.turso_org
+}

@@ -7,3 +7,7 @@ auth0_domain = "my-tenant.eu.auth0.com"
 
 # Public origin of the app (no trailing slash)
 app_origin = "https://app.example.com"
+
+# Turso (per-user sync databases)
+turso_org = "my-turso-org"
+# turso_group = "default"

@@ -30,3 +30,26 @@ variable "app_origin" {
   type        = string
   default     = "http://localhost:8080"
 }
+
+variable "turso_org" {
+  description = "Turso organization slug (used for per-user DB provisioning)"
+  type        = string
+}
+
+variable "turso_api_token" {
+  description = "Turso platform API token"
+  type        = string
+  sensitive   = true
+}
+
+variable "turso_group" {
+  description = "Turso database group for new user databases"
+  type        = string
+  default     = "default"
+}
+
+variable "session_secret" {
+  description = "Secret key for signing session cookies"
+  type        = string
+  sensitive   = true
+}

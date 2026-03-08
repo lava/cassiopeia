@@ -139,6 +139,40 @@ resource "google_secret_manager_secret_version" "oidc_client_secret" {
 }
 
 # =============================================================================
+# Turso
+# =============================================================================
+
+resource "google_secret_manager_secret" "turso_api_token" {
+  secret_id = "cassiopeia-turso-api-token"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.required_apis]
+}
+
+resource "google_secret_manager_secret_version" "turso_api_token" {
+  secret      = google_secret_manager_secret.turso_api_token.id
+  secret_data = var.turso_api_token
+}
+
+# =============================================================================
+# Session
+# =============================================================================
+
+resource "google_secret_manager_secret" "session_secret" {
+  secret_id = "cassiopeia-session-secret"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.required_apis]
+}
+
+resource "google_secret_manager_secret_version" "session_secret" {
+  secret      = google_secret_manager_secret.session_secret.id
+  secret_data = var.session_secret
+}
+
+# =============================================================================
 # Artifact Registry
 # =============================================================================
 
@@ -201,6 +235,18 @@ resource "google_secret_manager_secret_iam_member" "cloud_run_oidc_client_secret
   member    = "serviceAccount:${google_service_account.cloud_run.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "cloud_run_turso_api_token" {
+  secret_id = google_secret_manager_secret.turso_api_token.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "cloud_run_session_secret" {
+  secret_id = google_secret_manager_secret.session_secret.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
 # =============================================================================
 # Cloud Run
 # =============================================================================
@@ -211,7 +257,7 @@ resource "google_cloud_run_v2_service" "cassiopeia" {
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
 
-  deletion_protection = false
+  deletion_protection  = false
   invoker_iam_disabled = true
 
   template {
@@ -255,6 +301,36 @@ resource "google_cloud_run_v2_service" "cassiopeia" {
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.oidc_client_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name  = "TURSO_ORG"
+        value = var.turso_org
+      }
+
+      env {
+        name = "TURSO_API_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.turso_api_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name  = "TURSO_GROUP"
+        value = var.turso_group
+      }
+
+      env {
+        name = "SESSION_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.session_secret.secret_id
             version = "latest"
           }
         }
