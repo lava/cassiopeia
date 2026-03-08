@@ -197,6 +197,30 @@ resource "google_secret_manager_secret_version" "session_secret" {
 }
 
 # =============================================================================
+# Encrypted Backup Storage (GCS)
+# =============================================================================
+
+resource "google_storage_bucket" "backups" {
+  name     = "${var.project_id}-cassiopeia-backups"
+  location = var.backup_bucket_location
+
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+    condition {
+      num_newer_versions = 3
+    }
+  }
+
+  versioning {
+    enabled = true
+  }
+}
+
+# =============================================================================
 # Artifact Registry
 # =============================================================================
 
@@ -269,6 +293,13 @@ resource "google_secret_manager_secret_iam_member" "cloud_run_turso_admin_db_tok
   secret_id = google_secret_manager_secret.turso_admin_db_token.id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
+# Cloud Run SA needs to read/write backup blobs
+resource "google_storage_bucket_iam_member" "cloud_run_backups" {
+  bucket = google_storage_bucket.backups.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.cloud_run.email}"
 }
 
 # =============================================================================
@@ -353,6 +384,11 @@ resource "google_cloud_run_v2_service" "cassiopeia" {
       env {
         name  = "TURSO_GROUP"
         value = var.turso_group
+      }
+
+      env {
+        name  = "BACKUP_GCS_BUCKET"
+        value = google_storage_bucket.backups.name
       }
 
       env {

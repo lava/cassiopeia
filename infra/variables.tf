@@ -42,3 +42,9 @@ variable "turso_group" {
   type        = string
   default     = "default"
 }
+
+variable "backup_bucket_location" {
+  description = "GCS location for the encrypted backup bucket"
+  type        = string
+  default     = "EU"
+}

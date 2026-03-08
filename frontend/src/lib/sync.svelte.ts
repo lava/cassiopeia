@@ -1,5 +1,6 @@
 import { createClient, type Client } from '@libsql/client/web';
-import { query, execute, getSyncMeta, setSyncMeta } from '$lib/db';
+import { query, execute, getSyncMeta, setSyncMeta, exportDatabase, importDatabase } from '$lib/db';
+import { encrypt, decrypt } from '$lib/crypto';
 
 /** Format a Date to match SQLite's datetime('now'): 'YYYY-MM-DD HH:MM:SS' */
 function sqliteNow(): string {
@@ -8,15 +9,28 @@ function sqliteNow(): string {
 
 let tursoClient: Client | null = null;
 
-interface SyncCredentials {
+interface ContentCredentials {
+	mode: 'content';
 	url: string;
 	token: string;
 }
 
+interface BackupCredentials {
+	mode: 'encrypted-backup';
+}
+
+type SyncCredentials = ContentCredentials | BackupCredentials;
+
+export type SyncMode = 'none' | 'content' | 'encrypted-backup';
 export type SyncState = 'idle' | 'syncing' | 'offline' | 'disconnected';
 
+let _syncMode: SyncMode = $state('none');
 let _syncState: SyncState = $state('disconnected');
 let _lastSync: string | null = $state(null);
+
+export function getSyncMode(): SyncMode {
+	return _syncMode;
+}
 
 export function getSyncState(): SyncState {
 	return _syncState;
@@ -40,7 +54,7 @@ async function ensureClient(): Promise<Client | null> {
 	if (tursoClient) return tursoClient;
 
 	const creds = await getCredentials();
-	if (!creds) return null;
+	if (!creds || creds.mode !== 'content') return null;
 
 	tursoClient = createClient({ url: creds.url, authToken: creds.token });
 	return tursoClient;
@@ -310,10 +324,16 @@ export async function syncNow(): Promise<void> {
 	}
 }
 
-export async function provisionSync(): Promise<boolean> {
+export async function provisionSync(mode: 'content' | 'encrypted-backup'): Promise<boolean> {
 	try {
-		const resp = await fetch('/api/sync/provision', { method: 'POST' });
-		return resp.ok;
+		const resp = await fetch('/api/sync/provision', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ sync_mode: mode })
+		});
+		if (!resp.ok) return false;
+		_syncMode = mode;
+		return true;
 	} catch {
 		return false;
 	}
@@ -339,8 +359,61 @@ export function stopAutoSync(): void {
 export async function initSync(): Promise<void> {
 	_lastSync = await getSyncMeta('last_sync');
 	const creds = await getCredentials();
-	if (creds) {
+	if (!creds) {
+		_syncMode = 'none';
+		return;
+	}
+
+	if (creds.mode === 'content') {
+		_syncMode = 'content';
 		_syncState = 'idle';
 		startAutoSync();
+	} else if (creds.mode === 'encrypted-backup') {
+		_syncMode = 'encrypted-backup';
+		_syncState = 'idle';
 	}
+}
+
+// --- Encrypted backup functions ---
+
+export interface BackupInfo {
+	sha256: string;
+	size: number;
+	updated_at: string;
+}
+
+export async function getBackupInfo(): Promise<BackupInfo | null> {
+	try {
+		const resp = await fetch('/api/sync/backup/info');
+		if (!resp.ok) return null;
+		return await resp.json();
+	} catch {
+		return null;
+	}
+}
+
+export async function backupNow(key: CryptoKey): Promise<void> {
+	const dbBytes = await exportDatabase();
+	const encrypted = await encrypt(key, dbBytes.buffer);
+
+	const formData = new FormData();
+	formData.append('file', new Blob([encrypted]), 'backup.enc');
+
+	const resp = await fetch('/api/sync/backup', {
+		method: 'POST',
+		body: formData
+	});
+	if (!resp.ok) {
+		const detail = await resp.text();
+		throw new Error(`Backup upload failed: ${detail}`);
+	}
+}
+
+export async function restoreBackup(key: CryptoKey): Promise<void> {
+	const resp = await fetch('/api/sync/backup');
+	if (!resp.ok) throw new Error('Backup download failed');
+
+	const encrypted = await resp.arrayBuffer();
+	const decrypted = await decrypt(key, encrypted);
+	await importDatabase(new Uint8Array(decrypted));
 }

@@ -13,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from cassiopeia.config import settings
 from cassiopeia.db import init_schema
 from cassiopeia.routers.auth import router as auth_router
+from cassiopeia.routers.backup import router as backup_router
 from cassiopeia.routers.sync import router as sync_router
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Cassiopeia", lifespan=lifespan)
 
 app.include_router(auth_router)
+app.include_router(backup_router)
 app.include_router(sync_router)
 
 app.add_middleware(

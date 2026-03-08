@@ -2,22 +2,140 @@
 	import { onMount } from 'svelte';
 	import { getAuth } from '$lib/auth.svelte';
 	import { getToken } from '$lib/db';
-	import { provisionSync, getSyncState } from '$lib/sync.svelte';
+	import {
+		provisionSync,
+		getSyncState,
+		getSyncMode,
+		backupNow,
+		restoreBackup,
+		getBackupInfo,
+		type BackupInfo
+	} from '$lib/sync.svelte';
+	import { generateKey, exportKey, importKey } from '$lib/crypto';
 
 	const auth = getAuth();
 
 	let ouraConnected = $state(false);
 	let provisioning = $state(false);
+	let selectedMode = $state<'content' | 'encrypted-backup'>('encrypted-backup');
+
+	// Encrypted backup state
+	type BackupPhase = 'idle' | 'key-reveal' | 'ready' | 'key-entry';
+	let backupPhase = $state<BackupPhase>('idle');
+	let generatedKeyBase64 = $state('');
+	let rememberKey = $state(false);
+	let keyInput = $state('');
+	let backupKey: CryptoKey | null = $state(null);
+	let backupInfo = $state<BackupInfo | null>(null);
+	let backupBusy = $state(false);
+	let backupError = $state('');
+	let keyCopied = $state(false);
+
+	const STORAGE_KEY = 'cassiopeia-backup-key';
 
 	onMount(async () => {
 		const token = await getToken('oura');
 		ouraConnected = !!token;
+
+		// If encrypted-backup mode, check for stored key and load backup info
+		if (getSyncMode() === 'encrypted-backup') {
+			const stored = localStorage.getItem(STORAGE_KEY);
+			if (stored) {
+				try {
+					backupKey = await importKey(stored);
+					backupPhase = 'ready';
+				} catch {
+					localStorage.removeItem(STORAGE_KEY);
+					backupPhase = 'key-entry';
+				}
+			} else {
+				backupPhase = 'key-entry';
+			}
+			backupInfo = await getBackupInfo();
+		}
 	});
 
 	async function handleProvision() {
 		provisioning = true;
-		await provisionSync();
+		if (selectedMode === 'encrypted-backup') {
+			const key = await generateKey();
+			const ok = await provisionSync('encrypted-backup');
+			if (ok) {
+				generatedKeyBase64 = await exportKey(key);
+				backupKey = key;
+				backupPhase = 'key-reveal';
+			}
+		} else {
+			await provisionSync('content');
+		}
 		provisioning = false;
+	}
+
+	async function confirmKeySaved() {
+		if (rememberKey && backupKey) {
+			localStorage.setItem(STORAGE_KEY, generatedKeyBase64);
+		}
+		backupPhase = 'ready';
+		generatedKeyBase64 = '';
+	}
+
+	async function unlockWithKey() {
+		backupError = '';
+		try {
+			backupKey = await importKey(keyInput.trim());
+			if (rememberKey) {
+				localStorage.setItem(STORAGE_KEY, keyInput.trim());
+			}
+			backupPhase = 'ready';
+			keyInput = '';
+		} catch {
+			backupError = 'Ungültiger Schlüssel.';
+		}
+	}
+
+	function forgetKey() {
+		localStorage.removeItem(STORAGE_KEY);
+		backupKey = null;
+		backupPhase = 'key-entry';
+	}
+
+	async function handleBackup() {
+		if (!backupKey) return;
+		backupBusy = true;
+		backupError = '';
+		try {
+			await backupNow(backupKey);
+			backupInfo = await getBackupInfo();
+		} catch (e) {
+			backupError = e instanceof Error ? e.message : 'Backup fehlgeschlagen.';
+		} finally {
+			backupBusy = false;
+		}
+	}
+
+	async function handleRestore() {
+		if (!backupKey) return;
+		backupBusy = true;
+		backupError = '';
+		try {
+			await restoreBackup(backupKey);
+			window.location.reload();
+		} catch (e) {
+			backupError = e instanceof Error ? e.message : 'Wiederherstellung fehlgeschlagen.';
+			backupBusy = false;
+		}
+	}
+
+	async function copyKey() {
+		await navigator.clipboard.writeText(generatedKeyBase64);
+		keyCopied = true;
+		setTimeout(() => (keyCopied = false), 2000);
+	}
+
+	function formatSize(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 </script>
 
@@ -45,21 +163,140 @@
 			</div>
 		</div>
 
+		{@const syncMode = getSyncMode()}
 		{@const syncState = getSyncState()}
-		{#if syncState === 'disconnected'}
+
+		{#if syncMode === 'none' && syncState === 'disconnected'}
+			<!-- Mode selector: not yet provisioned -->
 			<div class="card">
-				<h3>Cloud-Sync aktivieren</h3>
-				<p class="card-desc">
-					Daten geraetuebergreifend synchronisieren. Die lokale Datenbank wird in die Cloud gespiegelt.
-				</p>
-				<p class="card-warning">
-					Aktiviere Cloud-Sync nur, wenn du dem Betreiber dieser Seite vertraust. Deine Gesundheitsdaten werden auf einem Server gespeichert, auf den der Betreiber Zugriff hat.
-				</p>
+				<h3>Cloud-Sync einrichten</h3>
+
+				<label class="mode-option">
+					<input type="radio" bind:group={selectedMode} value="content" />
+					<div class="mode-label">
+						<strong>Inhalte synchronisieren</strong>
+						<span class="mode-desc">
+							Daten werden mit dem Server synchronisiert. Mehrere Geräte möglich.
+						</span>
+						<span class="mode-warning">
+							Der Betreiber kann deine Daten einsehen.
+						</span>
+					</div>
+				</label>
+
+				<label class="mode-option">
+					<input type="radio" bind:group={selectedMode} value="encrypted-backup" />
+					<div class="mode-label">
+						<strong>Verschlüsseltes Backup</strong>
+						<span class="mode-desc">
+							Eine verschlüsselte Kopie wird auf dem Server gespeichert. Nur du kannst sie
+							entschlüsseln.
+						</span>
+					</div>
+				</label>
+
 				<button class="action-btn" onclick={handleProvision} disabled={provisioning}>
-					{provisioning ? 'Wird eingerichtet...' : 'Sync einrichten'}
+					{provisioning ? 'Wird eingerichtet...' : 'Einrichten'}
 				</button>
 			</div>
-		{:else}
+
+		{:else if syncMode === 'encrypted-backup' && backupPhase === 'key-reveal'}
+			<!-- Key reveal after setup -->
+			<div class="card">
+				<h3>Dein Entschlüsselungsschlüssel</h3>
+
+				<div class="key-display">
+					<code class="key-value">{generatedKeyBase64}</code>
+					<button class="icon-btn" onclick={copyKey} title="Kopieren">
+						{keyCopied ? 'Kopiert' : 'Kopieren'}
+					</button>
+				</div>
+
+				<p class="card-warning">
+					Speichere diesen Schlüssel in deinem Passwort-Manager. Er kann nicht
+					wiederhergestellt werden!
+				</p>
+
+				<label class="checkbox-row">
+					<input type="checkbox" bind:checked={rememberKey} />
+					Schlüssel in diesem Browser merken
+				</label>
+
+				<button class="action-btn" onclick={confirmKeySaved}>
+					Ich habe den Schlüssel gespeichert
+				</button>
+			</div>
+
+		{:else if syncMode === 'encrypted-backup' && backupPhase === 'ready'}
+			<!-- Ongoing: encrypted backup with key available -->
+			<div class="card">
+				<h3>Verschlüsseltes Backup</h3>
+				{#if backupInfo && backupInfo.size > 0}
+					<p class="card-desc">
+						Letztes Backup: {backupInfo.updated_at} ({formatSize(backupInfo.size)})
+					</p>
+				{:else}
+					<p class="card-desc">Noch kein Backup erstellt.</p>
+				{/if}
+
+				{#if backupError}
+					<p class="card-error">{backupError}</p>
+				{/if}
+
+				<div class="btn-row">
+					<button class="action-btn" onclick={handleBackup} disabled={backupBusy}>
+						{backupBusy ? 'Läuft...' : 'Backup erstellen'}
+					</button>
+					{#if backupInfo && backupInfo.size > 0}
+						<button class="action-btn secondary" onclick={handleRestore} disabled={backupBusy}>
+							Wiederherstellen
+						</button>
+					{/if}
+				</div>
+
+				<p class="key-hint">
+					Schlüssel wird in diesem Browser gespeichert ·
+					<button class="link-btn" onclick={forgetKey}>Vergessen</button>
+				</p>
+			</div>
+
+		{:else if syncMode === 'encrypted-backup' && backupPhase === 'key-entry'}
+			<!-- Ongoing: encrypted backup, key NOT remembered -->
+			<div class="card">
+				<h3>Verschlüsseltes Backup</h3>
+				{#if backupInfo && backupInfo.size > 0}
+					<p class="card-desc">
+						Letztes Backup: {backupInfo.updated_at} ({formatSize(backupInfo.size)})
+					</p>
+				{/if}
+
+				<p class="card-desc">
+					Schlüssel eingeben um Backup zu erstellen oder wiederherzustellen
+				</p>
+
+				{#if backupError}
+					<p class="card-error">{backupError}</p>
+				{/if}
+
+				<input
+					type="text"
+					class="key-input"
+					bind:value={keyInput}
+					placeholder="Base64-Schlüssel einfügen"
+				/>
+
+				<label class="checkbox-row">
+					<input type="checkbox" bind:checked={rememberKey} />
+					Schlüssel in diesem Browser merken
+				</label>
+
+				<button class="action-btn" onclick={unlockWithKey} disabled={!keyInput.trim()}>
+					Entsperren
+				</button>
+			</div>
+
+		{:else if syncMode === 'content'}
+			<!-- Ongoing: content sync -->
 			<div class="card">
 				<h3>Cloud-Sync</h3>
 				<p class="card-desc">Daten werden automatisch synchronisiert.</p>
@@ -151,6 +388,16 @@
 		line-height: 1.5;
 	}
 
+	.card-error {
+		margin: 0 0 0.75rem;
+		font-size: 0.85rem;
+		color: #dc2626;
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: 8px;
+		padding: 0.5rem 0.75rem;
+	}
+
 	.profile-card {
 		padding: 1.5rem;
 	}
@@ -198,6 +445,136 @@
 		color: #6b7280;
 	}
 
+	.mode-option {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.75rem;
+		margin-bottom: 0.5rem;
+		border: 1px solid #e5e7eb;
+		border-radius: 8px;
+		cursor: pointer;
+		transition: border-color 0.15s;
+	}
+
+	.mode-option:has(input:checked) {
+		border-color: #1f2937;
+		background: #f9fafb;
+	}
+
+	.mode-option input[type='radio'] {
+		margin-top: 0.2rem;
+		flex-shrink: 0;
+	}
+
+	.mode-label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.mode-label strong {
+		font-size: 0.9rem;
+		color: #111827;
+	}
+
+	.mode-desc {
+		font-size: 0.825rem;
+		color: #6b7280;
+		line-height: 1.4;
+	}
+
+	.mode-warning {
+		font-size: 0.8rem;
+		color: #92400e;
+	}
+
+	.key-display {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
+		border-radius: 8px;
+		padding: 0.6rem 0.85rem;
+	}
+
+	.key-value {
+		flex: 1;
+		font-size: 0.85rem;
+		word-break: break-all;
+		color: #111827;
+	}
+
+	.icon-btn {
+		padding: 0.3rem 0.6rem;
+		border-radius: 6px;
+		background: #e5e7eb;
+		border: none;
+		font-size: 0.8rem;
+		cursor: pointer;
+		flex-shrink: 0;
+		color: #374151;
+	}
+
+	.icon-btn:hover {
+		background: #d1d5db;
+	}
+
+	.key-input {
+		width: 100%;
+		padding: 0.55rem 0.75rem;
+		border: 1px solid #e5e7eb;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		margin-bottom: 0.75rem;
+		font-family: monospace;
+		box-sizing: border-box;
+	}
+
+	.key-input:focus {
+		outline: none;
+		border-color: #1f2937;
+	}
+
+	.checkbox-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+		color: #6b7280;
+		margin-bottom: 1rem;
+		cursor: pointer;
+	}
+
+	.btn-row {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.key-hint {
+		font-size: 0.8rem;
+		color: #9ca3af;
+		margin: 0;
+	}
+
+	.link-btn {
+		background: none;
+		border: none;
+		color: #6b7280;
+		text-decoration: underline;
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 0;
+	}
+
+	.link-btn:hover {
+		color: #374151;
+	}
+
 	.action-btn {
 		display: inline-flex;
 		align-items: center;
@@ -221,6 +598,16 @@
 	.action-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
+	}
+
+	.action-btn.secondary {
+		background: #fff;
+		color: #1f2937;
+		border: 1px solid #e5e7eb;
+	}
+
+	.action-btn.secondary:hover:not(:disabled) {
+		background: #f9fafb;
 	}
 
 	.service-row {

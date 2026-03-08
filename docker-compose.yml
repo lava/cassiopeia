@@ -3,6 +3,8 @@ services:
     build: .
     ports:
       - "8080:8080"
+    volumes:
+      - backups:/app/backups
     environment:
       BASE_URL: http://localhost:8080
       OIDC_ISSUER: ${OIDC_ISSUER:-}
@@ -14,3 +16,6 @@ services:
       TURSO_ADMIN_DB_URL: ${TURSO_ADMIN_DB_URL:-}
       TURSO_ADMIN_DB_TOKEN: ${TURSO_ADMIN_DB_TOKEN:-}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+
+volumes:
+  backups:

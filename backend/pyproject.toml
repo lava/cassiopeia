@@ -13,6 +13,9 @@ dependencies = [
     "itsdangerous>=2.2.0",
 ]
 
+[project.optional-dependencies]
+gcs = ["google-cloud-storage>=2.18"]
+
 [dependency-groups]
 dev = [
     "pytest",
@@ -31,6 +34,10 @@ packages = ["cassiopeia"]
 
 [[tool.mypy.overrides]]
 module = "authlib.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.cloud.*"
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]

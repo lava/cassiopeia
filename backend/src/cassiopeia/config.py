@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     turso_admin_db_url: str = ""
     turso_admin_db_token: str = ""
 
+    # Backup storage: set bucket name to use GCS, leave empty for local filesystem
+    backup_gcs_bucket: str = ""
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

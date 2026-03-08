@@ -135,6 +135,84 @@ async function handleDump(): Promise<TableDump[]> {
 	return tables;
 }
 
+async function handleImport(data: Uint8Array): Promise<void> {
+	// Close current DB, import data from a standard SQLite file, re-open.
+	// Strategy: open the import file in MEMFS, read all tables, write into OPFS DB.
+	await sqlite3.close(db);
+
+	// Write import data to MEMFS temp file
+	const importPath = '/tmp/cassiopeia-import.db';
+	try {
+		emscriptenModule.FS.mkdir('/tmp');
+	} catch {
+		// /tmp may already exist
+	}
+	try {
+		emscriptenModule.FS.unlink(importPath);
+	} catch {
+		// file may not exist
+	}
+	emscriptenModule.FS.writeFile(importPath, data);
+
+	const importDb = await sqlite3.open_v2(importPath, 0x01, 'unix-none'); // read-only
+
+	// Get schema + data from import db
+	const tables: { name: string; sql: string }[] = [];
+	await sqlite3.exec(
+		importDb,
+		"SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid",
+		(row: unknown[]) => tables.push({ name: row[0] as string, sql: row[1] as string })
+	);
+
+	const tableData = new Map<string, { columns: string[]; rows: unknown[][] }>();
+	for (const t of tables) {
+		const columns: string[] = [];
+		const rows: unknown[][] = [];
+		await sqlite3.exec(importDb, `SELECT * FROM "${t.name}"`, (row: unknown[], cols: string[]) => {
+			if (columns.length === 0) columns.push(...cols);
+			rows.push([...row]);
+		});
+		tableData.set(t.name, { columns, rows });
+	}
+
+	await sqlite3.close(importDb);
+	emscriptenModule.FS.unlink(importPath);
+
+	// Re-open OPFS database and replace contents
+	db = await sqlite3.open_v2('cassiopeia');
+
+	// Drop all existing tables
+	const existingTables: string[] = [];
+	await sqlite3.exec(
+		db,
+		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+		(row: unknown[]) => existingTables.push(row[0] as string)
+	);
+	for (const name of existingTables) {
+		await sqlite3.exec(db, `DROP TABLE IF EXISTS "${name}"`);
+	}
+
+	// Recreate from import
+	for (const t of tables) {
+		await sqlite3.exec(db, t.sql);
+	}
+
+	for (const [name, { columns, rows }] of tableData) {
+		if (rows.length === 0) continue;
+		const placeholders = columns.map(() => '?').join(',');
+		const colList = columns.map((c) => `"${c}"`).join(',');
+		const sql = `INSERT INTO "${name}" (${colList}) VALUES (${placeholders})`;
+
+		for (const row of rows) {
+			for await (const stmt of sqlite3.statements(db, sql)) {
+				const params = row.map((v) => (v === undefined ? null : v));
+				sqlite3.bind_collection(stmt, params);
+				await sqlite3.step(stmt);
+			}
+		}
+	}
+}
+
 self.onmessage = async (e: MessageEvent<{ id: number; request: DbRequest }>) => {
 	const { id, request } = e.data;
 
@@ -158,6 +236,11 @@ self.onmessage = async (e: MessageEvent<{ id: number; request: DbRequest }>) => 
 			case 'serialize': {
 				const tables = await handleDump();
 				response = { type: 'dump', tables };
+				break;
+			}
+			case 'import-db': {
+				await handleImport(request.data);
+				response = { type: 'ok' };
 				break;
 			}
 			default:

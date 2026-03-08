@@ -5,7 +5,8 @@ export type DbRequest =
 	| { type: 'exec'; sql: string }
 	| { type: 'query'; sql: string; params: Param[] }
 	| { type: 'queryRaw'; sql: string }
-	| { type: 'serialize' };
+	| { type: 'serialize' }
+	| { type: 'import-db'; data: Uint8Array };
 
 export type TableDump = {
 	name: string;

@@ -88,18 +88,37 @@ def _db_name_for_user(user_sub: str) -> str:
 
 @router.post("/provision")
 async def provision_database(request: Request) -> dict[str, Any]:
-    """Create a per-user Turso database."""
-    if not _turso_configured():
-        raise HTTPException(status_code=501, detail="Turso sync is not configured.")
-
+    """Create a per-user sync database (content or encrypted-backup mode)."""
     user_sub = _get_user_sub(request)
 
-    # Check if already provisioned
-    rows = await execute(
+    body = await request.json()
+    sync_mode = body.get("sync_mode", "content")
+    if sync_mode not in ("content", "encrypted-backup"):
+        raise HTTPException(status_code=400, detail="Invalid sync_mode.")
+
+    # Check if already provisioned in either mode
+    content_rows = await execute(
         "SELECT db_url FROM turso_databases WHERE user_sub = ?", [user_sub]
     )
-    if rows:
-        return {"provisioned": True, "db_url": rows[0]["db_url"]}
+    if content_rows:
+        return {"provisioned": True, "mode": "content", "db_url": content_rows[0]["db_url"]}
+
+    backup_rows = await execute(
+        "SELECT user_sub FROM encrypted_backups WHERE user_sub = ?", [user_sub]
+    )
+    if backup_rows:
+        return {"provisioned": True, "mode": "encrypted-backup"}
+
+    if sync_mode == "encrypted-backup":
+        await execute(
+            "INSERT INTO encrypted_backups (user_sub, sha256, size) VALUES (?, '', 0)",
+            [user_sub],
+        )
+        return {"provisioned": True, "mode": "encrypted-backup"}
+
+    # Content sync mode — need Turso configured
+    if not _turso_configured():
+        raise HTTPException(status_code=501, detail="Turso sync is not configured.")
 
     db_name = _db_name_for_user(user_sub)
 
@@ -165,17 +184,25 @@ async def provision_database(request: Request) -> dict[str, Any]:
 
 @router.get("/credentials")
 async def get_credentials(request: Request) -> dict[str, str]:
-    """Get Turso connection credentials for the current user."""
-    if not _turso_configured():
-        raise HTTPException(status_code=501, detail="Turso sync is not configured.")
-
+    """Get sync credentials/mode for the current user."""
     user_sub = _get_user_sub(request)
 
+    # Check encrypted backup first
+    backup_rows = await execute(
+        "SELECT user_sub FROM encrypted_backups WHERE user_sub = ?", [user_sub]
+    )
+    if backup_rows:
+        return {"mode": "encrypted-backup"}
+
+    # Check content sync
     rows = await execute(
         "SELECT db_url FROM turso_databases WHERE user_sub = ?", [user_sub]
     )
     if not rows:
         raise HTTPException(status_code=404, detail="No sync database provisioned.")
+
+    if not _turso_configured():
+        raise HTTPException(status_code=501, detail="Turso sync is not configured.")
 
     db_url = rows[0]["db_url"]
     db_name = _db_name_for_user(user_sub)
@@ -194,4 +221,4 @@ async def get_credentials(request: Request) -> dict[str, str]:
 
         jwt = resp.json().get("jwt", "")
 
-    return {"url": db_url, "token": jwt}
+    return {"mode": "content", "url": db_url, "token": jwt}

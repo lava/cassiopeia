@@ -185,6 +185,12 @@ export async function exportDatabase(): Promise<Uint8Array> {
 	return data;
 }
 
+export async function importDatabase(data: Uint8Array): Promise<void> {
+	await initDB();
+	const resp = await send({ type: 'import-db', data });
+	unwrap(resp);
+}
+
 // --- High-level data access ---
 
 export async function getMetricDefinitions(): Promise<MetricDefinition[]> {

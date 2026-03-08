@@ -22,6 +22,12 @@ ADMIN_SCHEMA = [
         db_url TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""",
+    """CREATE TABLE IF NOT EXISTS encrypted_backups (
+        user_sub TEXT PRIMARY KEY,
+        sha256 TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""",
 ]
 
 
