@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -74,4 +75,16 @@ async def proxy_oura(request: Request) -> dict:
 # Serve built frontend static files (must be last so it doesn't shadow API routes)
 _static_dir = Path(__file__).resolve().parent.parent.parent / "static"
 if _static_dir.is_dir():
-    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")
+
+    class SPAStaticFiles(StaticFiles):
+        """StaticFiles with SPA fallback: unknown routes serve index.html."""
+
+        def lookup_path(
+            self, path: str
+        ) -> tuple[str, os.stat_result | None]:
+            full_path, stat = super().lookup_path(path)
+            if stat is None:
+                return super().lookup_path("index.html")
+            return full_path, stat
+
+    app.mount("/", SPAStaticFiles(directory=_static_dir, html=True), name="static")
