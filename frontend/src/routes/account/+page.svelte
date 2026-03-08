@@ -52,6 +52,9 @@
 				<p class="card-desc">
 					Daten geraetuebergreifend synchronisieren. Die lokale Datenbank wird in die Cloud gespiegelt.
 				</p>
+				<p class="card-warning">
+					Aktiviere Cloud-Sync nur, wenn du dem Betreiber dieser Seite vertraust. Deine Gesundheitsdaten werden auf einem Server gespeichert, auf den der Betreiber Zugriff hat.
+				</p>
 				<button class="action-btn" onclick={handleProvision} disabled={provisioning}>
 					{provisioning ? 'Wird eingerichtet...' : 'Sync einrichten'}
 				</button>
@@ -134,6 +137,17 @@
 		margin: 0 0 1rem;
 		font-size: 0.9rem;
 		color: #6b7280;
+		line-height: 1.5;
+	}
+
+	.card-warning {
+		margin: 0 0 1rem;
+		font-size: 0.825rem;
+		color: #92400e;
+		background: #fffbeb;
+		border: 1px solid #fde68a;
+		border-radius: 8px;
+		padding: 0.65rem 0.85rem;
 		line-height: 1.5;
 	}
 
