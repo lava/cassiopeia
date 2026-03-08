@@ -112,6 +112,43 @@ async function pushChanges(): Promise<void> {
 		});
 	}
 
+	// Push raw imports
+	const newImports = await query<{
+		id: number;
+		source: string;
+		imported_at: string;
+		filename: string | null;
+		data: string | null;
+	}>('SELECT * FROM raw_imports WHERE imported_at > ?', [lastPush]);
+
+	for (const imp of newImports) {
+		await client.execute({
+			sql: `INSERT INTO raw_imports (id, source, imported_at, filename, data)
+			      VALUES (?, ?, ?, ?, ?)
+			      ON CONFLICT(id) DO NOTHING`,
+			args: [imp.id, imp.source, imp.imported_at, imp.filename, imp.data]
+		});
+	}
+
+	// Push user tokens
+	const newTokens = await query<{
+		id: number;
+		service: string;
+		token: string;
+		created_at: string;
+	}>('SELECT * FROM user_tokens WHERE created_at > ?', [lastPush]);
+
+	for (const tok of newTokens) {
+		await client.execute({
+			sql: `INSERT INTO user_tokens (id, service, token, created_at)
+			      VALUES (?, ?, ?, ?)
+			      ON CONFLICT(service) DO UPDATE SET
+			        token = excluded.token,
+			        created_at = excluded.created_at`,
+			args: [tok.id, tok.service, tok.token, tok.created_at]
+		});
+	}
+
 	await setSyncMeta('last_push', sqliteNow());
 }
 
@@ -173,6 +210,49 @@ async function pullChanges(): Promise<void> {
 				row.raw_value as number,
 				row.normalized as number,
 				row.updated_at as string
+			]
+		);
+	}
+
+	// Pull raw imports
+	const importsResult = await client.execute({
+		sql: 'SELECT * FROM raw_imports WHERE imported_at > ?',
+		args: [lastPull]
+	});
+
+	for (const row of importsResult.rows) {
+		await execute(
+			`INSERT INTO raw_imports (id, source, imported_at, filename, data)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO NOTHING`,
+			[
+				row.id as number,
+				row.source as string,
+				row.imported_at as string,
+				row.filename as string | null,
+				row.data as string | null
+			]
+		);
+	}
+
+	// Pull user tokens
+	const tokensResult = await client.execute({
+		sql: 'SELECT * FROM user_tokens WHERE created_at > ?',
+		args: [lastPull]
+	});
+
+	for (const row of tokensResult.rows) {
+		await execute(
+			`INSERT INTO user_tokens (id, service, token, created_at)
+			 VALUES (?, ?, ?, ?)
+			 ON CONFLICT(service) DO UPDATE SET
+			   token = excluded.token,
+			   created_at = excluded.created_at`,
+			[
+				row.id as number,
+				row.service as string,
+				row.token as string,
+				row.created_at as string
 			]
 		);
 	}
