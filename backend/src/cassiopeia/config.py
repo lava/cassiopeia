@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Base URL for building callback URLs
     base_url: str = "http://localhost:8080"
 
+    # Turso
+    turso_org: str = ""
+    turso_api_token: str = ""
+    turso_group: str = "default"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     @property

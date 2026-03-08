@@ -1,42 +1,45 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { getAuth, loginAnonymously } from '$lib/auth.svelte';
+	import { getAuth } from '$lib/auth.svelte';
 
 	const auth = getAuth();
-	let loading = $state(false);
+	let firstVisit = $state(false);
 
-	async function handleAnonymous() {
-		loading = true;
-		const ok = await loginAnonymously();
-		loading = false;
-		if (ok) goto('/dashboard');
-	}
+	onMount(() => {
+		// Check if user has any data in local DB
+		import('$lib/db').then(async ({ getMetricDefinitions }) => {
+			const metrics = await getMetricDefinitions();
+			if (metrics.length > 0) {
+				goto('/dashboard');
+			} else {
+				firstVisit = true;
+			}
+		});
+	});
 </script>
 
-<div class="landing">
-	<div class="hero">
-		<span class="star">✦</span>
-		<h1>Cassiopeia</h1>
-		<p class="subtitle">
-			Gesundheitsdaten an einem Ort. Schlaf, Stimmung, Schritte, Energie &mdash;
-			alles auf einer Zeitachse, damit Pacing einfacher wird.
-		</p>
-		{#if auth.authenticated}
-			<a href="/dashboard" class="cta">Zum Dashboard &rarr;</a>
-		{:else}
+{#if firstVisit}
+	<div class="landing">
+		<div class="hero">
+			<span class="star">✦</span>
+			<h1>Cassiopeia</h1>
+			<p class="subtitle">
+				Gesundheitsdaten an einem Ort. Schlaf, Stimmung, Schritte, Energie &mdash;
+				alles auf einer Zeitachse, damit Pacing einfacher wird.
+			</p>
+			<p class="local-note">
+				Deine Daten bleiben lokal in deinem Browser. Kein Konto noetig.
+			</p>
 			<div class="auth-buttons">
-				{#if auth.oidc_enabled}
-					<a href="/api/auth/login" class="cta">Anmelden &rarr;</a>
-				{:else}
-					<span class="cta cta-disabled" title="OIDC ist nicht konfiguriert">Anmelden &rarr;</span>
+				<a href="/dashboard" class="cta">Loslegen &rarr;</a>
+				{#if auth.oidc_enabled && !auth.authenticated}
+					<a href="/api/auth/login" class="cta cta-secondary">Anmelden fuer Sync</a>
 				{/if}
-				<button class="cta cta-secondary" onclick={handleAnonymous} disabled={loading}>
-					{loading ? 'Wird erstellt…' : 'Ohne Konto starten'}
-				</button>
 			</div>
-		{/if}
+		</div>
 	</div>
-</div>
+{/if}
 
 <style>
 	.landing {
@@ -71,6 +74,12 @@
 		font-size: 1.05rem;
 		color: #4b5563;
 		line-height: 1.65;
+		margin: 0 0 0.75rem;
+	}
+
+	.local-note {
+		font-size: 0.875rem;
+		color: #9ca3af;
 		margin: 0 0 2rem;
 	}
 
@@ -94,27 +103,13 @@
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 	}
 
-	.cta:disabled,
-	.cta-disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-		transform: none;
-		pointer-events: none;
-		background: #9ca3af;
-	}
-
-	.cta-disabled {
-		pointer-events: auto;
-		cursor: help;
-	}
-
 	.cta-secondary {
 		background: transparent;
 		color: #4b5563;
 		border: 1px solid #d1d5db;
 	}
 
-	.cta-secondary:hover:not(:disabled) {
+	.cta-secondary:hover {
 		background: #f9fafb;
 		color: #1f2937;
 		border-color: #9ca3af;

@@ -1,22 +1,24 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getAuth } from '$lib/auth.svelte';
+	import { getToken } from '$lib/db';
+	import { provisionSync, getSyncState } from '$lib/sync.svelte';
 
 	const auth = getAuth();
 
 	let ouraConnected = $state(false);
+	let provisioning = $state(false);
 
 	onMount(async () => {
-		try {
-			const resp = await fetch('/api/import/oura/token');
-			if (resp.ok) {
-				const data = await resp.json();
-				ouraConnected = data.configured;
-			}
-		} catch {
-			// ignore
-		}
+		const token = await getToken('oura');
+		ouraConnected = !!token;
 	});
+
+	async function handleProvision() {
+		provisioning = true;
+		await provisionSync();
+		provisioning = false;
+	}
 </script>
 
 <div class="page">
@@ -24,21 +26,7 @@
 		<h2>Konto</h2>
 	</div>
 
-	{#if auth.user}
-		{#if auth.user.is_anonymous}
-			<div class="card anon-card">
-				<p class="anon-text">
-					Du verwendest ein anonymes Konto. Erstelle ein permanentes Konto,
-					um deine Daten zu sichern.
-				</p>
-				{#if auth.oidc_enabled}
-					<a href="/api/auth/login" class="link-btn">Konto erstellen &rarr;</a>
-				{:else}
-					<span class="link-btn link-btn-disabled" title="OIDC ist nicht konfiguriert">Konto erstellen &rarr;</span>
-				{/if}
-			</div>
-		{/if}
-
+	{#if auth.authenticated && auth.user}
 		<div class="card profile-card">
 			<div class="profile-row">
 				{#if auth.user.picture}
@@ -49,14 +37,43 @@
 					</span>
 				{/if}
 				<div class="profile-info">
-					<span class="profile-name">{auth.user.name || 'Anonym'}</span>
+					<span class="profile-name">{auth.user.name || 'User'}</span>
 					{#if auth.user.email}
 						<span class="profile-email">{auth.user.email}</span>
-					{:else}
-						<span class="profile-email anon-label">Anonymes Konto</span>
 					{/if}
 				</div>
 			</div>
+		</div>
+
+		{@const syncState = getSyncState()}
+		{#if syncState === 'disconnected'}
+			<div class="card">
+				<h3>Cloud-Sync aktivieren</h3>
+				<p class="card-desc">
+					Daten geraetuebergreifend synchronisieren. Die lokale Datenbank wird in die Cloud gespiegelt.
+				</p>
+				<button class="action-btn" onclick={handleProvision} disabled={provisioning}>
+					{provisioning ? 'Wird eingerichtet...' : 'Sync einrichten'}
+				</button>
+			</div>
+		{:else}
+			<div class="card">
+				<h3>Cloud-Sync</h3>
+				<p class="card-desc">Daten werden automatisch synchronisiert.</p>
+			</div>
+		{/if}
+
+		<a href="/api/auth/logout" class="logout-btn">Abmelden</a>
+	{:else}
+		<div class="card">
+			<h3>Lokaler Modus</h3>
+			<p class="card-desc">
+				Deine Daten werden lokal in diesem Browser gespeichert. Melde dich an, um
+				geraetuebergreifend zu synchronisieren.
+			</p>
+			{#if auth.oidc_enabled}
+				<a href="/api/auth/login" class="action-btn">Anmelden fuer Sync &rarr;</a>
+			{/if}
 		</div>
 
 		<div class="card">
@@ -78,8 +95,6 @@
 				<span class="service-status connected">CSV-Import</span>
 			</div>
 		</div>
-
-		<a href="/api/auth/logout" class="logout-btn">Abmelden</a>
 	{/if}
 </div>
 
@@ -109,10 +124,17 @@
 	}
 
 	.card h3 {
-		margin: 0 0 1rem;
+		margin: 0 0 0.5rem;
 		font-size: 1rem;
 		font-weight: 650;
 		color: #111827;
+	}
+
+	.card-desc {
+		margin: 0 0 1rem;
+		font-size: 0.9rem;
+		color: #6b7280;
+		line-height: 1.5;
 	}
 
 	.profile-card {
@@ -162,6 +184,31 @@
 		color: #6b7280;
 	}
 
+	.action-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.55rem 1.1rem;
+		border-radius: 8px;
+		background: #1f2937;
+		color: #fff;
+		text-decoration: none;
+		font-size: 0.875rem;
+		font-weight: 600;
+		border: none;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.action-btn:hover:not(:disabled) {
+		background: #374151;
+	}
+
+	.action-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
 	.service-row {
 		display: flex;
 		justify-content: space-between;
@@ -184,6 +231,7 @@
 		padding: 0.15rem 0.6rem;
 		border-radius: 99px;
 		font-weight: 500;
+		text-decoration: none;
 	}
 
 	.service-status.connected {
@@ -194,50 +242,6 @@
 	.service-status.pending {
 		background: #f3f4f6;
 		color: #9ca3af;
-	}
-
-	.anon-card {
-		background: #fffbeb;
-		border-color: #fde68a;
-	}
-
-	.anon-text {
-		margin: 0 0 1rem;
-		font-size: 0.9rem;
-		color: #92400e;
-		line-height: 1.5;
-	}
-
-	.anon-label {
-		color: #d97706;
-	}
-
-	.link-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		padding: 0.55rem 1.1rem;
-		border-radius: 8px;
-		background: #1f2937;
-		color: #fff;
-		text-decoration: none;
-		font-size: 0.875rem;
-		font-weight: 600;
-		transition: all 0.15s ease;
-	}
-
-	.link-btn:hover {
-		background: #374151;
-	}
-
-	.link-btn-disabled {
-		opacity: 0.5;
-		background: #9ca3af;
-		cursor: help;
-	}
-
-	.link-btn-disabled:hover {
-		background: #9ca3af;
 	}
 
 	.logout-btn {

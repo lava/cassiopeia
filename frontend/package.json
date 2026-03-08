@@ -12,13 +12,17 @@
     "@sveltejs/adapter-static": "^3",
     "@sveltejs/kit": "^2",
     "@sveltejs/vite-plugin-svelte": "^5",
+    "@types/papaparse": "^5.5.2",
     "svelte": "^5",
     "svelte-check": "^4",
     "typescript": "^5",
     "vite": "^6"
   },
   "dependencies": {
-    "chart.js": "^4"
+    "@libsql/client": "^0.17.0",
+    "chart.js": "^4",
+    "papaparse": "^5.5.3",
+    "wa-sqlite": "^1.0.0"
   },
   "type": "module"
 }

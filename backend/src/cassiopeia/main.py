@@ -3,39 +3,28 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from cassiopeia.config import settings
-from cassiopeia.db import async_session_maker
 from cassiopeia.routers.auth import router as auth_router
-from cassiopeia.routers.import_ import router as import_router
-from cassiopeia.routers.metrics import router as metrics_router
-from cassiopeia.seed import seed_default_metrics
+from cassiopeia.routers.sync import router as sync_router
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Seed default metrics
-    async with async_session_maker() as session:
-        await seed_default_metrics(session)
-    logger.info("Default metrics seeded.")
-
     yield
-
-
-
 
 
 app = FastAPI(title="Cassiopeia", lifespan=lifespan)
 
 app.include_router(auth_router)
-app.include_router(import_router)
-app.include_router(metrics_router)
+app.include_router(sync_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,6 +45,28 @@ app.add_middleware(
 @app.get("/api/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/proxy/oura")
+async def proxy_oura(request: Request) -> dict:
+    """Stateless proxy for Oura API calls (works around CORS)."""
+    body = await request.json()
+    token = body.get("token", "")
+    endpoint = body.get("endpoint", "")
+    params = body.get("params", {})
+
+    if not token or not endpoint:
+        return {"error": "Missing token or endpoint"}
+
+    url = f"https://api.ouraring.com/v2/usercollection/{endpoint}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            params=params,
+        )
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
 
 
 # Serve built frontend static files (must be last so it doesn't shadow API routes)

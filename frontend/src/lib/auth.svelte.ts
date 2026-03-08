@@ -3,7 +3,6 @@ export interface User {
 	email: string;
 	name: string;
 	picture: string;
-	is_anonymous: boolean;
 }
 
 interface AuthState {
@@ -35,18 +34,5 @@ export async function checkAuth() {
 		state.user = null;
 	} finally {
 		state.loading = false;
-	}
-}
-
-export async function loginAnonymously(): Promise<boolean> {
-	try {
-		const res = await fetch('/api/auth/anonymous', { method: 'POST' });
-		if (!res.ok) return false;
-		const data = await res.json();
-		state.authenticated = data.authenticated;
-		state.user = data.user;
-		return true;
-	} catch {
-		return false;
 	}
 }

@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { importBearableCsv } from '$lib/importers/bearable';
+	import { importGarminCsv } from '$lib/importers/garmin';
+	import { syncOura } from '$lib/importers/oura';
+	import { getToken, setToken, deleteToken } from '$lib/db';
 	import type { ImportResult } from '$lib/types';
 
 	interface UploadState {
@@ -35,25 +39,20 @@
 		}
 	}
 
-	async function upload(state: UploadState, endpoint: string) {
+	async function importCsv(
+		state: UploadState,
+		importer: (csv: string, filename: string | null) => Promise<ImportResult>
+	) {
 		if (!state.file) return;
 		state.uploading = true;
 		state.result = null;
 		state.error = null;
 
 		try {
-			const formData = new FormData();
-			formData.append('file', state.file);
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				body: formData
-			});
-			if (!response.ok) {
-				throw new Error(`Upload fehlgeschlagen: ${response.status} ${response.statusText}`);
-			}
-			state.result = (await response.json()) as ImportResult;
+			const text = await state.file.text();
+			state.result = await importer(text, state.file.name);
 		} catch (e) {
-			state.error = e instanceof Error ? e.message : 'Upload fehlgeschlagen';
+			state.error = e instanceof Error ? e.message : 'Import fehlgeschlagen';
 		} finally {
 			state.uploading = false;
 		}
@@ -69,15 +68,8 @@
 	let ouraDays = $state(30);
 
 	onMount(async () => {
-		try {
-			const resp = await fetch('/api/import/oura/token');
-			if (resp.ok) {
-				const data = await resp.json();
-				ouraTokenConfigured = data.configured;
-			}
-		} catch {
-			// ignore
-		}
+		const token = await getToken('oura');
+		ouraTokenConfigured = !!token;
 	});
 
 	async function saveOuraToken() {
@@ -86,15 +78,7 @@
 		ouraTokenError = null;
 
 		try {
-			const resp = await fetch('/api/import/oura/token', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ token: ouraTokenInput.trim() })
-			});
-			if (!resp.ok) {
-				const body = await resp.json().catch(() => null);
-				throw new Error(body?.detail || 'Speichern fehlgeschlagen');
-			}
+			await setToken('oura', ouraTokenInput.trim());
 			ouraTokenConfigured = true;
 			ouraTokenInput = '';
 		} catch (e) {
@@ -104,18 +88,14 @@
 		}
 	}
 
-	async function deleteOuraToken() {
-		try {
-			await fetch('/api/import/oura/token', { method: 'DELETE' });
-			ouraTokenConfigured = false;
-			ouraResult = null;
-			ouraError = null;
-		} catch {
-			// ignore
-		}
+	async function removeOuraToken() {
+		await deleteToken('oura');
+		ouraTokenConfigured = false;
+		ouraResult = null;
+		ouraError = null;
 	}
 
-	async function syncOura() {
+	async function handleSyncOura() {
 		ouraSyncing = true;
 		ouraResult = null;
 		ouraError = null;
@@ -125,21 +105,10 @@
 			const start = new Date();
 			start.setDate(end.getDate() - ouraDays);
 
-			const params = new URLSearchParams({
-				from: start.toISOString().slice(0, 10),
-				to: end.toISOString().slice(0, 10)
-			});
-
-			const response = await fetch(`/api/import/oura/sync?${params}`, {
-				method: 'POST'
-			});
-			if (!response.ok) {
-				const body = await response.json().catch(() => null);
-				throw new Error(
-					body?.detail || `Sync fehlgeschlagen: ${response.status} ${response.statusText}`
-				);
-			}
-			ouraResult = (await response.json()) as ImportResult;
+			ouraResult = await syncOura(
+				start.toISOString().slice(0, 10),
+				end.toISOString().slice(0, 10)
+			);
 		} catch (e) {
 			ouraError = e instanceof Error ? e.message : 'Sync fehlgeschlagen';
 		} finally {
@@ -154,7 +123,7 @@
 		<p class="page-desc">Gesundheitsdaten aus verschiedenen Quellen importieren.</p>
 	</div>
 
-	{#snippet uploadCard(state: UploadState, title: string, description: string, endpoint: string)}
+	{#snippet uploadCard(state: UploadState, title: string, description: string, importer: (csv: string, filename: string | null) => Promise<ImportResult>)}
 		<div class="card">
 			<h3>{title}</h3>
 			<p class="card-desc">{description}</p>
@@ -178,13 +147,13 @@
 					<span class="drop-text">CSV-Datei hierher ziehen</span>
 					<span class="drop-hint">oder</span>
 					<label class="file-select-btn">
-						Datei auswählen
+						Datei auswaehlen
 						<input type="file" accept=".csv" onchange={(e: Event) => handleFileChange(state, e)} hidden />
 					</label>
 				{/if}
 			</div>
 
-			<button class="upload-btn" onclick={() => upload(state, endpoint)} disabled={!state.file || state.uploading}>
+			<button class="upload-btn" onclick={() => importCsv(state, importer)} disabled={!state.file || state.uploading}>
 				{#if state.uploading}
 					Wird importiert...
 				{:else}
@@ -196,7 +165,7 @@
 				<div class="result success">
 					<strong>{state.result.imported}</strong> Datenpunkte importiert
 					{#if state.result.skipped > 0}
-						&middot; <strong>{state.result.skipped}</strong> übersprungen
+						&middot; <strong>{state.result.skipped}</strong> uebersprungen
 					{/if}
 					{#if state.result.errors.length > 0}
 						<div class="result-errors">
@@ -214,8 +183,8 @@
 		</div>
 	{/snippet}
 
-	{@render uploadCard(bearable, 'Bearable CSV', 'Bearable-Export im CSV-Format hochladen.', '/api/import/bearable')}
-	{@render uploadCard(garmin, 'Garmin CSV', 'GarminDB Daily-Summary-Export im CSV-Format hochladen.', '/api/import/garmin')}
+	{@render uploadCard(bearable, 'Bearable CSV', 'Bearable-Export im CSV-Format importieren.', importBearableCsv)}
+	{@render uploadCard(garmin, 'Garmin CSV', 'GarminDB Daily-Summary-Export im CSV-Format importieren.', importGarminCsv)}
 
 	<div class="card">
 		<h3>Oura Ring</h3>
@@ -245,7 +214,7 @@
 			{/if}
 		{:else}
 			<p class="card-desc">
-				Schlaf-, Bereitschafts- und Aktivitätsdaten vom Oura Ring synchronisieren.
+				Schlaf-, Bereitschafts- und Aktivitaetsdaten vom Oura Ring synchronisieren.
 			</p>
 
 			<div class="sync-controls">
@@ -259,7 +228,7 @@
 						<option value={365}>1 Jahr</option>
 					</select>
 				</label>
-				<button class="sync-btn" onclick={syncOura} disabled={ouraSyncing}>
+				<button class="sync-btn" onclick={handleSyncOura} disabled={ouraSyncing}>
 					{#if ouraSyncing}
 						Synchronisiere...
 					{:else}
@@ -272,7 +241,7 @@
 				<div class="result success">
 					<strong>{ouraResult.imported}</strong> Datenpunkte importiert
 					{#if ouraResult.skipped > 0}
-						&middot; <strong>{ouraResult.skipped}</strong> übersprungen
+						&middot; <strong>{ouraResult.skipped}</strong> uebersprungen
 					{/if}
 					{#if ouraResult.errors.length > 0}
 						<div class="result-errors">
@@ -288,7 +257,7 @@
 				<div class="result error-msg">{ouraError}</div>
 			{/if}
 
-			<button class="token-remove-btn" onclick={deleteOuraToken}>
+			<button class="token-remove-btn" onclick={removeOuraToken}>
 				Token entfernen
 			</button>
 		{/if}
@@ -335,17 +304,6 @@
 
 	.card-desc {
 		margin: 0 0 1rem;
-		color: #6b7280;
-		font-size: 0.9rem;
-	}
-
-
-	.card.future {
-		opacity: 0.6;
-	}
-
-	.card.future p {
-		margin: 0;
 		color: #6b7280;
 		font-size: 0.9rem;
 	}

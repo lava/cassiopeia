@@ -26,7 +26,6 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String, nullable=True)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     picture: Mapped[str | None] = mapped_column(String, nullable=True)
-    is_anonymous: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
@@ -94,3 +93,14 @@ class RawImport(Base):
     )
     filename: Mapped[str | None] = mapped_column(String, nullable=True)
     data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # type: ignore[type-arg]
+
+
+class TursoDatabase(Base):
+    __tablename__ = "turso_databases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_sub: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    db_url: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )

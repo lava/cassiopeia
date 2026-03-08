@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiFetch } from '$lib/api';
-	import type { MetricDefinition, MetricsDataResponse } from '$lib/types';
+	import { getMetricDefinitions, getMetricsRaw } from '$lib/db';
+	import { aggregateToPeriods, type Granularity } from '$lib/aggregation';
+	import type { MetricDefinition } from '$lib/types';
 	import ChartComponent from '$lib/components/Chart.svelte';
 	import MetricToggle from '$lib/components/MetricToggle.svelte';
 
@@ -29,7 +30,7 @@
 	const MONTH_NAMES = [
 		'Januar',
 		'Februar',
-		'März',
+		'Maerz',
 		'April',
 		'Mai',
 		'Juni',
@@ -43,7 +44,7 @@
 
 	let metrics: MetricDefinition[] = $state([]);
 	let activeMetrics: string[] = $state([]);
-	let granularity: string = $state('day');
+	let granularity: Granularity = $state('day');
 	let currentYear: number = $state(new Date().getFullYear());
 	let currentMonth: number = $state(new Date().getMonth());
 
@@ -104,13 +105,11 @@
 		loading = true;
 		fetchError = null;
 		try {
-			const metricsParam = activeMetrics.join(',');
 			const { from, to } = dateRange;
-			const data = await apiFetch<MetricsDataResponse>(
-				`/metrics/data?metrics=${metricsParam}&from=${from}&to=${to}&granularity=${granularity}`
-			);
-			dates = data.dates;
-			series = data.series;
+			const rows = await getMetricsRaw(activeMetrics, from, to);
+			const result = aggregateToPeriods(rows, granularity);
+			dates = result.dates;
+			series = result.series;
 		} catch (e) {
 			fetchError = e instanceof Error ? e.message : 'Failed to load data';
 		} finally {
@@ -127,7 +126,7 @@
 
 	onMount(async () => {
 		try {
-			const data = await apiFetch<MetricDefinition[]>('/metrics');
+			const data = await getMetricDefinitions();
 			metrics = data;
 			activeMetrics = data.filter((m) => m.is_default).map((m) => m.name);
 		} catch (e) {
@@ -167,7 +166,7 @@
 		{:else if fetchError}
 			<div class="overlay error">{fetchError}</div>
 		{:else if dates.length === 0 && metrics.length > 0}
-			<div class="overlay muted">Keine Daten für diesen Zeitraum</div>
+			<div class="overlay muted">Keine Daten fuer diesen Zeitraum</div>
 		{/if}
 		<ChartComponent {dates} {series} {activeMetrics} {metricColors} {metricLabels} />
 	</div>

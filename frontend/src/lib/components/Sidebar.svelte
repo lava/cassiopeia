@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { User } from '$lib/auth.svelte';
+	import SyncStatus from '$lib/components/SyncStatus.svelte';
 
 	interface NavItem {
 		href: string;
@@ -15,10 +16,10 @@
 	let { user }: Props = $props();
 
 	const nav: NavItem[] = [
-		{ href: '/', label: 'Start', icon: 'home' },
 		{ href: '/dashboard', label: 'Dashboard', icon: 'chart' },
 		{ href: '/dashboard/import', label: 'Import', icon: 'import' },
-		{ href: '/dashboard/metrics', label: 'Metriken', icon: 'list' }
+		{ href: '/dashboard/metrics', label: 'Metriken', icon: 'list' },
+		{ href: '/dashboard/sql', label: 'SQL', icon: 'sql' }
 	];
 
 	let mobileOpen = $state(false);
@@ -51,17 +52,10 @@
 
 	<nav>
 		{#each nav as item}
-			{@const active =
-				item.href === '/'
-					? page.url.pathname === '/'
-					: page.url.pathname.startsWith(item.href)}
+			{@const active = page.url.pathname.startsWith(item.href) && (item.href !== '/dashboard' || page.url.pathname === '/dashboard')}
 			<a href={item.href} class="nav-link" class:active onclick={closeMobile}>
 				<svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-					{#if item.icon === 'home'}
-						<path
-							d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"
-						/>
-					{:else if item.icon === 'chart'}
+					{#if item.icon === 'chart'}
 						<path d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zm5 1V7h2v4H7zm4 0V5h2v6h-2z" />
 					{:else if item.icon === 'import'}
 						<path
@@ -71,6 +65,10 @@
 						<path
 							d="M3 5h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2z"
 						/>
+					{:else if item.icon === 'sql'}
+						<path
+							d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm3 2a1 1 0 000 2h2a1 1 0 100-2H7zm0 4a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 100 2h4a1 1 0 100-2H7z"
+						/>
 					{/if}
 				</svg>
 				<span>{item.label}</span>
@@ -79,6 +77,7 @@
 	</nav>
 
 	<div class="sidebar-footer">
+		<SyncStatus />
 		{#if user}
 			<a href="/account" class="user-link" onclick={closeMobile}>
 				{#if user.picture}
@@ -88,7 +87,12 @@
 						{user.name?.charAt(0)?.toUpperCase() || '?'}
 					</span>
 				{/if}
-				<span class="user-name">{user.name || user.email || 'Anonym'}</span>
+				<span class="user-name">{user.name || user.email || 'Lokal'}</span>
+			</a>
+		{:else}
+			<a href="/account" class="user-link" onclick={closeMobile}>
+				<span class="avatar-placeholder">L</span>
+				<span class="user-name">Lokal</span>
 			</a>
 		{/if}
 	</div>

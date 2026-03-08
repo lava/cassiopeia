@@ -1,22 +1,34 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import { page } from '$app/state';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import { getAuth, checkAuth } from '$lib/auth.svelte';
+	import { initDB } from '$lib/db';
+	import { initSync } from '$lib/sync.svelte';
 
 	let { children }: { children: Snippet } = $props();
 	const auth = getAuth();
+	let dbReady = $state(false);
 
-	onMount(() => {
-		checkAuth();
+	let showSidebar = $derived(page.url.pathname !== '/');
+
+	onMount(async () => {
+		await initDB();
+		dbReady = true;
+		checkAuth().then(() => {
+			if (auth.authenticated) {
+				initSync();
+			}
+		});
 	});
 </script>
 
-{#if auth.loading}
+{#if !dbReady}
 	<div class="loading-screen">
 		<span class="loading-star">✦</span>
 	</div>
-{:else if auth.authenticated}
+{:else if showSidebar}
 	<div class="app-shell">
 		<Sidebar user={auth.user} />
 		<main class="main-content">

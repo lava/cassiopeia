@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiFetch } from '$lib/api';
+	import { getMetricDefinitions } from '$lib/db';
 	import type { MetricDefinition } from '$lib/types';
 
 	let metrics: MetricDefinition[] = $state([]);
@@ -14,7 +14,7 @@
 
 	onMount(async () => {
 		try {
-			metrics = await apiFetch<MetricDefinition[]>('/metrics');
+			metrics = await getMetricDefinitions();
 		} finally {
 			loading = false;
 		}
