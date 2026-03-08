@@ -6,7 +6,8 @@
 
 	function formatLastSync(iso: string | null): string {
 		if (!iso) return '';
-		const diff = Date.now() - new Date(iso).getTime();
+		// Stored timestamps are UTC in SQLite format (no Z suffix); append Z so Date parses as UTC
+		const diff = Date.now() - new Date(iso.replace(' ', 'T') + 'Z').getTime();
 		const mins = Math.floor(diff / 60000);
 		if (mins < 1) return 'Gerade eben';
 		if (mins < 60) return `Vor ${mins} Min.`;
