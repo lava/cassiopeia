@@ -59,10 +59,12 @@ export async function importBearableCsv(
 		return { imported: 0, skipped: 0, errors: ["CSV missing 'date' column"] };
 	}
 
-	await addRawImport('bearable', filename, {
-		rows: parsed.data.length,
-		columns: parsed.meta.fields
-	});
+	await addRawImport(
+		'bearable',
+		filename,
+		{ rows: parsed.data.length, columns: parsed.meta.fields },
+		csvContent
+	);
 
 	// Map columns to metric definitions
 	const columnMappings: Record<string, [string, string, string, number, string | null]> = {};

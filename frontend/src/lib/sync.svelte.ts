@@ -128,6 +128,21 @@ async function pushChanges(): Promise<void> {
 			      ON CONFLICT(id) DO NOTHING`,
 			args: [imp.id, imp.source, imp.imported_at, imp.filename, imp.data]
 		});
+
+		const dataRows = await query<{
+			id: number;
+			import_id: number;
+			content: string;
+		}>('SELECT * FROM raw_import_data WHERE import_id = ?', [imp.id]);
+
+		for (const d of dataRows) {
+			await client.execute({
+				sql: `INSERT INTO raw_import_data (id, import_id, content)
+				      VALUES (?, ?, ?)
+				      ON CONFLICT(id) DO NOTHING`,
+				args: [d.id, d.import_id, d.content]
+			});
+		}
 	}
 
 	// Push user tokens
@@ -233,6 +248,20 @@ async function pullChanges(): Promise<void> {
 				row.data as string | null
 			]
 		);
+
+		const dataResult = await client.execute({
+			sql: 'SELECT * FROM raw_import_data WHERE import_id = ?',
+			args: [row.id as number]
+		});
+
+		for (const d of dataResult.rows) {
+			await execute(
+				`INSERT INTO raw_import_data (id, import_id, content)
+				 VALUES (?, ?, ?)
+				 ON CONFLICT(id) DO NOTHING`,
+				[d.id as number, d.import_id as number, d.content as string]
+			);
+		}
 	}
 
 	// Pull user tokens

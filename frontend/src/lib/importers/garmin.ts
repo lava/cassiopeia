@@ -84,10 +84,12 @@ export async function importGarminCsv(
 		};
 	}
 
-	await addRawImport('garmin', filename, {
-		rows: parsed.data.length,
-		columns: fields
-	});
+	await addRawImport(
+		'garmin',
+		filename,
+		{ rows: parsed.data.length, columns: fields },
+		csvContent
+	);
 
 	// Map CSV columns to metric definitions
 	const columnMappings: Record<

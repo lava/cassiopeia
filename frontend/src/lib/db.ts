@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS raw_imports (
   data TEXT
 );
 
+CREATE TABLE IF NOT EXISTS raw_import_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  import_id INTEGER NOT NULL REFERENCES raw_imports(id),
+  content TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_tokens (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   service TEXT UNIQUE NOT NULL,
@@ -220,13 +226,25 @@ export async function upsertDailyMetric(
 export async function addRawImport(
 	source: string,
 	filename: string | null,
-	data: unknown
-): Promise<void> {
+	data: unknown,
+	rawContent: string | null = null
+): Promise<number> {
 	await execute('INSERT INTO raw_imports (source, filename, data) VALUES (?, ?, ?)', [
 		source,
 		filename,
 		JSON.stringify(data)
 	]);
+	const rows = await query<{ id: number }>('SELECT last_insert_rowid() as id');
+	const importId = rows[0].id;
+
+	if (rawContent) {
+		await execute('INSERT INTO raw_import_data (import_id, content) VALUES (?, ?)', [
+			importId,
+			rawContent
+		]);
+	}
+
+	return importId;
 }
 
 // --- Token management ---

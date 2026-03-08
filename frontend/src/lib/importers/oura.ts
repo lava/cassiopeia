@@ -164,13 +164,18 @@ export async function syncOura(startDate: string, endDate: string): Promise<Impo
 		}
 	}
 
-	await addRawImport('oura', null, {
-		start_date: startDate,
-		end_date: endDate,
-		record_counts: Object.fromEntries(
-			Object.entries(allRawData).map(([k, v]) => [k, v.length])
-		)
-	});
+	await addRawImport(
+		'oura',
+		null,
+		{
+			start_date: startDate,
+			end_date: endDate,
+			record_counts: Object.fromEntries(
+				Object.entries(allRawData).map(([k, v]) => [k, v.length])
+			)
+		},
+		JSON.stringify(allRawData)
+	);
 
 	return { imported, skipped, errors };
 }
