@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from cassiopeia.config import settings
+from cassiopeia.db import init_schema
 from cassiopeia.routers.auth import router as auth_router
 from cassiopeia.routers.sync import router as sync_router
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await init_schema()
     yield
 
 

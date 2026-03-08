@@ -1,13 +1,11 @@
 from typing import Any
 
 from authlib.integrations.starlette_client import OAuth  # type: ignore[import-untyped]
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from cassiopeia.config import settings
-from cassiopeia.db import get_db
-from cassiopeia.models import User
+from cassiopeia.db import execute
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -30,16 +28,6 @@ if oidc_configured():
     )
 
 
-def _session_user(user: User) -> dict[str, Any]:
-    """Build the session dict from a User model instance."""
-    return {
-        "sub": user.sub,
-        "email": user.email or "",
-        "name": user.name or "",
-        "picture": user.picture or "",
-    }
-
-
 @router.get("/login")
 async def login(request: Request) -> RedirectResponse:
     if not oidc_configured():
@@ -49,30 +37,30 @@ async def login(request: Request) -> RedirectResponse:
 
 
 @router.get("/callback")
-async def callback(
-    request: Request,
-    session: AsyncSession = Depends(get_db),
-) -> RedirectResponse:
+async def callback(request: Request) -> RedirectResponse:
     if not oidc_configured():
         return RedirectResponse(url="/dashboard")
     token: dict[str, Any] = await oauth.oidc.authorize_access_token(request)
     userinfo: dict[str, Any] = token.get("userinfo", {})
 
-    oidc_sub = userinfo.get("sub", "")
+    sub = userinfo.get("sub", "")
     email = userinfo.get("email", "")
     name = userinfo.get("name", email)
     picture = userinfo.get("picture", "")
 
-    result = await session.execute(select(User).where(User.sub == oidc_sub))
-    user = result.scalar_one_or_none()
+    await execute(
+        """INSERT INTO users (sub, email, name, picture)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(sub) DO UPDATE SET email=?, name=?, picture=?""",
+        [sub, email, name, picture, email, name, picture],
+    )
 
-    if not user:
-        user = User(sub=oidc_sub, email=email, name=name, picture=picture)
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
-
-    request.session["user"] = _session_user(user)
+    request.session["user"] = {
+        "sub": sub,
+        "email": email,
+        "name": name,
+        "picture": picture,
+    }
     return RedirectResponse(url="/dashboard")
 
 

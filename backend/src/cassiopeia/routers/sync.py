@@ -4,13 +4,10 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Request
 
 from cassiopeia.config import settings
-from cassiopeia.db import get_db
-from cassiopeia.models import TursoDatabase
+from cassiopeia.db import execute
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +81,7 @@ def _db_name_for_user(user_sub: str) -> str:
 
 
 @router.post("/provision")
-async def provision_database(
-    request: Request,
-    session: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+async def provision_database(request: Request) -> dict[str, Any]:
     """Create a per-user Turso database."""
     if not _turso_configured():
         raise HTTPException(status_code=501, detail="Turso sync is not configured.")
@@ -95,12 +89,11 @@ async def provision_database(
     user_sub = _get_user_sub(request)
 
     # Check if already provisioned
-    result = await session.execute(
-        select(TursoDatabase).where(TursoDatabase.user_sub == user_sub)
+    rows = await execute(
+        "SELECT db_url FROM turso_databases WHERE user_sub = ?", [user_sub]
     )
-    existing = result.scalar_one_or_none()
-    if existing:
-        return {"provisioned": True, "db_url": existing.db_url}
+    if rows:
+        return {"provisioned": True, "db_url": rows[0]["db_url"]}
 
     db_name = _db_name_for_user(user_sub)
 
@@ -155,32 +148,30 @@ async def provision_database(
     except Exception as e:
         logger.warning("Schema init may have failed: %s", e)
 
-    # Store mapping
-    turso_db = TursoDatabase(user_sub=user_sub, db_url=db_url)
-    session.add(turso_db)
-    await session.commit()
+    # Store mapping in admin DB
+    await execute(
+        "INSERT INTO turso_databases (user_sub, db_url) VALUES (?, ?)",
+        [user_sub, db_url],
+    )
 
     return {"provisioned": True, "db_url": db_url}
 
 
 @router.get("/credentials")
-async def get_credentials(
-    request: Request,
-    session: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
+async def get_credentials(request: Request) -> dict[str, str]:
     """Get Turso connection credentials for the current user."""
     if not _turso_configured():
         raise HTTPException(status_code=501, detail="Turso sync is not configured.")
 
     user_sub = _get_user_sub(request)
 
-    result = await session.execute(
-        select(TursoDatabase).where(TursoDatabase.user_sub == user_sub)
+    rows = await execute(
+        "SELECT db_url FROM turso_databases WHERE user_sub = ?", [user_sub]
     )
-    turso_db = result.scalar_one_or_none()
-    if not turso_db:
+    if not rows:
         raise HTTPException(status_code=404, detail="No sync database provisioned.")
 
+    db_url = rows[0]["db_url"]
     db_name = _db_name_for_user(user_sub)
 
     # Generate a fresh short-lived token
@@ -197,4 +188,4 @@ async def get_credentials(
 
         jwt = resp.json().get("jwt", "")
 
-    return {"url": turso_db.db_url, "token": jwt}
+    return {"url": db_url, "token": jwt}

@@ -23,16 +23,6 @@ output "registry" {
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.cassiopeia.repository_id}"
 }
 
-output "neon_project_id" {
-  description = "Neon project ID"
-  value       = neon_project.cassiopeia.id
-}
-
-output "neon_host" {
-  description = "Neon database host"
-  value       = neon_project.cassiopeia.database_host
-}
-
 output "oidc_issuer" {
   description = "OIDC issuer URL (Auth0)"
   value       = "https://${var.auth0_domain}"

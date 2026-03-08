@@ -1,42 +1,16 @@
 services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: cassiopeia
-      POSTGRES_USER: cassiopeia
-      POSTGRES_PASSWORD: local
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cassiopeia"]
-      interval: 2s
-      timeout: 5s
-      retries: 5
-
-  migrate:
-    build: .
-    command: ["uv", "run", "alembic", "upgrade", "head"]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://cassiopeia:local@db:5432/cassiopeia
-    depends_on:
-      db:
-        condition: service_healthy
-
   app:
     build: .
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgresql+asyncpg://cassiopeia:local@db:5432/cassiopeia
       BASE_URL: http://localhost:8080
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-volumes:
-  pgdata:
+      TURSO_ORG: ${TURSO_ORG:-}
+      TURSO_API_TOKEN: ${TURSO_API_TOKEN:-}
+      TURSO_GROUP: ${TURSO_GROUP:-default}
+      TURSO_ADMIN_DB_URL: ${TURSO_ADMIN_DB_URL:-}
+      TURSO_ADMIN_DB_TOKEN: ${TURSO_ADMIN_DB_TOKEN:-}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}

@@ -13,8 +13,6 @@ WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY backend/src/ ./src/
-COPY backend/alembic/ ./alembic/
-COPY backend/alembic.ini ./
 COPY backend/entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 COPY --from=frontend-build /app/frontend/build ./static/

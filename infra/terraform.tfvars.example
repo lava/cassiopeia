@@ -1,13 +1,12 @@
 # Copy this file to terraform.tfvars and fill in the values
 
-project_id     = "your-gcp-project-id"
-region         = "europe-west4"
-neon_org_id  = "org-xxx-yyy-12345678"
+project_id   = "your-gcp-project-id"
+region       = "europe-west4"
 auth0_domain = "my-tenant.eu.auth0.com"
 
 # Public origin of the app (no trailing slash)
 app_origin = "https://app.example.com"
 
-# Turso (per-user sync databases)
+# Turso — admin DB (cassiopeia-admin) is auto-provisioned
 turso_org = "my-turso-org"
 # turso_group = "default"

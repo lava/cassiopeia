@@ -10,7 +10,7 @@ variable "region" {
 }
 
 variable "neon_org_id" {
-  description = "Neon organization ID"
+  description = "Neon organization ID (deprecated — kept for state)"
   type        = string
 }
 
@@ -46,10 +46,4 @@ variable "turso_group" {
   description = "Turso database group for new user databases"
   type        = string
   default     = "default"
-}
-
-variable "session_secret" {
-  description = "Secret key for signing session cookies"
-  type        = string
-  sensitive   = true
 }

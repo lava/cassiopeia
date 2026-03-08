@@ -18,6 +18,10 @@ terraform {
       source  = "auth0/auth0"
       version = "~> 1.40"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -51,7 +55,7 @@ resource "google_project_service" "required_apis" {
 }
 
 # =============================================================================
-# Database (Neon)
+# Database (Neon) — DEPRECATED, kept until Turso admin DB is verified
 # =============================================================================
 
 resource "neon_project" "cassiopeia" {
@@ -71,23 +75,6 @@ resource "neon_project" "cassiopeia" {
   }
 
   history_retention_seconds = 21600
-}
-
-# Store Neon connection URI in Secret Manager for Cloud Run
-resource "google_secret_manager_secret" "database_url" {
-  secret_id = "cassiopeia-database-url"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.required_apis]
-}
-
-resource "google_secret_manager_secret_version" "database_url" {
-  secret = google_secret_manager_secret.database_url.id
-  # Rewrite postgres:// to postgresql+asyncpg:// and append sslmode=require
-  secret_data = replace(neon_project.cassiopeia.connection_uri, "postgres://", "postgresql+asyncpg://")
 }
 
 # =============================================================================
@@ -155,9 +142,71 @@ resource "google_secret_manager_secret_version" "turso_api_token" {
   secret_data = var.turso_api_token
 }
 
+# Create the admin database via Turso API (idempotent — 409 on re-create is ignored)
+resource "terraform_data" "turso_admin_db" {
+  triggers_replace = [var.turso_org, var.turso_group]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      curl -sf -X POST \
+        -H "Authorization: Bearer $TURSO_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\": \"cassiopeia-admin\", \"group\": \"$TURSO_GROUP\"}" \
+        "https://api.turso.tech/v1/organizations/$TURSO_ORG/databases" \
+        || true
+    EOT
+
+    environment = {
+      TURSO_API_TOKEN = var.turso_api_token
+      TURSO_ORG       = var.turso_org
+      TURSO_GROUP     = var.turso_group
+    }
+  }
+}
+
+# Generate an auth token for the admin database
+data "external" "turso_admin_db_token" {
+  depends_on = [terraform_data.turso_admin_db]
+
+  program = ["bash", "-c", <<-EOT
+    read -r INPUT
+    API_TOKEN=$(echo "$INPUT" | jq -r '.api_token')
+    ORG=$(echo "$INPUT" | jq -r '.org')
+    JWT=$(curl -sf -X POST \
+      -H "Authorization: Bearer $API_TOKEN" \
+      "https://api.turso.tech/v1/organizations/$ORG/databases/cassiopeia-admin/auth/tokens" \
+      | jq -r '.jwt')
+    jq -n --arg jwt "$JWT" '{"jwt": $jwt}'
+  EOT
+  ]
+
+  query = {
+    api_token = var.turso_api_token
+    org       = var.turso_org
+  }
+}
+
+resource "google_secret_manager_secret" "turso_admin_db_token" {
+  secret_id = "cassiopeia-turso-admin-db-token"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.required_apis]
+}
+
+resource "google_secret_manager_secret_version" "turso_admin_db_token" {
+  secret      = google_secret_manager_secret.turso_admin_db_token.id
+  secret_data = data.external.turso_admin_db_token.result.jwt
+}
+
 # =============================================================================
 # Session
 # =============================================================================
+
+resource "random_password" "session_secret" {
+  length  = 48
+  special = false
+}
 
 resource "google_secret_manager_secret" "session_secret" {
   secret_id = "cassiopeia-session-secret"
@@ -169,7 +218,7 @@ resource "google_secret_manager_secret" "session_secret" {
 
 resource "google_secret_manager_secret_version" "session_secret" {
   secret      = google_secret_manager_secret.session_secret.id
-  secret_data = var.session_secret
+  secret_data = random_password.session_secret.result
 }
 
 # =============================================================================
@@ -217,12 +266,6 @@ resource "google_service_account" "cloud_run" {
 }
 
 # Cloud Run SA needs to read secrets
-resource "google_secret_manager_secret_iam_member" "cloud_run_database_url" {
-  secret_id = google_secret_manager_secret.database_url.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.cloud_run.email}"
-}
-
 resource "google_secret_manager_secret_iam_member" "cloud_run_oidc_client_id" {
   secret_id = google_secret_manager_secret.oidc_client_id.id
   role      = "roles/secretmanager.secretAccessor"
@@ -247,6 +290,12 @@ resource "google_secret_manager_secret_iam_member" "cloud_run_session_secret" {
   member    = "serviceAccount:${google_service_account.cloud_run.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "cloud_run_turso_admin_db_token" {
+  secret_id = google_secret_manager_secret.turso_admin_db_token.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
 # =============================================================================
 # Cloud Run
 # =============================================================================
@@ -267,10 +316,15 @@ resource "google_cloud_run_v2_service" "cassiopeia" {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.cassiopeia.repository_id}/cassiopeia:latest"
 
       env {
-        name = "DATABASE_URL"
+        name  = "TURSO_ADMIN_DB_URL"
+        value = "libsql://cassiopeia-admin-${var.turso_org}.turso.io"
+      }
+
+      env {
+        name = "TURSO_ADMIN_DB_TOKEN"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.database_url.secret_id
+            secret  = google_secret_manager_secret.turso_admin_db_token.secret_id
             version = "latest"
           }
         }
