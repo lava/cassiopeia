@@ -9,7 +9,7 @@ IMAGE      := $(REGISTRY)/cassiopeia:latest
 
 # --- Local development ---
 
-.PHONY: dev dev-backend dev-frontend migrate new-migration build push deploy deploy-image logs
+.PHONY: dev dev-backend dev-frontend build push deploy deploy-image logs
 
 dev:              ## Start all services locally
 	docker compose up
@@ -20,12 +20,6 @@ dev-backend:      ## Run backend with hot-reload (requires local postgres)
 dev-frontend:     ## Run frontend dev server
 	cd frontend && npm run dev
 
-migrate:          ## Run database migrations
-	cd backend && uv run alembic upgrade head
-
-new-migration:    ## Create a new migration (usage: make new-migration msg="add foo")
-	cd backend && uv run alembic revision --autogenerate -m "$(msg)"
-
 # --- Deployment ---
 
 build:            ## Build Docker image
@@ -34,14 +28,11 @@ build:            ## Build Docker image
 push: build       ## Build and push image to Artifact Registry
 	docker push $(IMAGE)
 
-deploy: push migrate-prod  ## Build, push, deploy to Cloud Run, and run migrations
+deploy: push  ## Build, push, and deploy to Cloud Run
 	gcloud run deploy $(SERVICE) \
 		--project $(PROJECT_ID) \
 		--region $(REGION) \
 		--image $(IMAGE)
-
-migrate-prod:     ## Run database migrations against production
-	cd backend && DATABASE_URL=$$(gcloud secrets versions access latest --secret=cassiopeia-database-url --project=$(PROJECT_ID)) uv run alembic upgrade head
 
 deploy-image:     ## Deploy already-pushed image to Cloud Run (no build)
 	gcloud run deploy $(SERVICE) \
