@@ -64,7 +64,7 @@ export async function initDB(): Promise<void> {
 async function _initDBInternal(): Promise<void> {
 	const module = await SQLiteAsyncESMFactory();
 	sqlite3 = SQLite.Factory(module);
-	const vfs = await IDBBatchAtomicVFS.create('cassiopeia', module);
+	const vfs = new IDBBatchAtomicVFS('cassiopeia');
 	sqlite3.vfs_register(vfs, true);
 	db = await sqlite3.open_v2('cassiopeia');
 	await sqlite3.exec(db, SCHEMA);
