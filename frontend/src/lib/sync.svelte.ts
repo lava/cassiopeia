@@ -1,6 +1,11 @@
 import { createClient, type Client } from '@libsql/client/web';
 import { query, execute, getSyncMeta, setSyncMeta } from '$lib/db';
 
+/** Format a Date to match SQLite's datetime('now'): 'YYYY-MM-DD HH:MM:SS' */
+function sqliteNow(): string {
+	return new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+}
+
 let tursoClient: Client | null = null;
 
 interface SyncCredentials {
@@ -45,7 +50,9 @@ async function pushChanges(): Promise<void> {
 	const client = await ensureClient();
 	if (!client) return;
 
-	const lastPush = (await getSyncMeta('last_push')) ?? '1970-01-01T00:00:00';
+	let lastPush = (await getSyncMeta('last_push')) ?? '1970-01-01 00:00:00';
+	// Migrate old ISO format (with T) to SQLite format (with space) — force full re-push
+	if (lastPush.includes('T')) lastPush = '1970-01-01 00:00:00';
 
 	// Push metric definitions
 	const newDefs = await query<{
@@ -105,14 +112,16 @@ async function pushChanges(): Promise<void> {
 		});
 	}
 
-	await setSyncMeta('last_push', new Date().toISOString());
+	await setSyncMeta('last_push', sqliteNow());
 }
 
 async function pullChanges(): Promise<void> {
 	const client = await ensureClient();
 	if (!client) return;
 
-	const lastPull = (await getSyncMeta('last_pull')) ?? '1970-01-01T00:00:00';
+	let lastPull = (await getSyncMeta('last_pull')) ?? '1970-01-01 00:00:00';
+	// Migrate old ISO format (with T) to SQLite format (with space) — force full re-pull
+	if (lastPull.includes('T')) lastPull = '1970-01-01 00:00:00';
 
 	// Pull metric definitions
 	const defsResult = await client.execute({
@@ -168,7 +177,7 @@ async function pullChanges(): Promise<void> {
 		);
 	}
 
-	await setSyncMeta('last_pull', new Date().toISOString());
+	await setSyncMeta('last_pull', sqliteNow());
 }
 
 export async function syncNow(): Promise<void> {
@@ -183,7 +192,7 @@ export async function syncNow(): Promise<void> {
 	try {
 		await pushChanges();
 		await pullChanges();
-		_lastSync = new Date().toISOString();
+		_lastSync = sqliteNow();
 		await setSyncMeta('last_sync', _lastSync);
 		_syncState = 'idle';
 	} catch (e) {
