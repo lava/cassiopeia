@@ -1,13 +1,78 @@
 <script lang="ts">
-	import { queryRaw } from '$lib/db';
+	import { queryRaw, exportDatabase } from '$lib/db';
 
-	let sqlInput = $state(`-- All metrics for the last 30 days
-SELECT d.date, m.display_name, d.raw_value, d.normalized
+	const EXAMPLE_QUERIES = [
+		{
+			label: 'Letzte 30 Tage',
+			sql: `SELECT d.date, m.display_name, d.raw_value, d.normalized
 FROM daily_metrics d
 JOIN metric_definitions m ON d.metric_id = m.id
 WHERE d.date >= date('now', '-30 days')
 ORDER BY d.date DESC
-LIMIT 100;`);
+LIMIT 100;`
+		},
+		{
+			label: 'Metriken-Uebersicht',
+			sql: `SELECT name, display_name, source, category,
+  original_min || ' - ' || original_max AS range
+FROM metric_definitions
+ORDER BY category, name;`
+		},
+		{
+			label: 'Tagesdurchschnitte pro Woche',
+			sql: `SELECT strftime('%Y-W%W', d.date) AS week,
+  m.display_name,
+  ROUND(AVG(d.raw_value), 2) AS avg_value,
+  COUNT(*) AS days
+FROM daily_metrics d
+JOIN metric_definitions m ON d.metric_id = m.id
+GROUP BY week, m.display_name
+ORDER BY week DESC, m.display_name
+LIMIT 100;`
+		},
+		{
+			label: 'Beste & schlechteste Tage',
+			sql: `SELECT d.date,
+  ROUND(AVG(d.normalized), 3) AS avg_score,
+  COUNT(*) AS metrics_count
+FROM daily_metrics d
+GROUP BY d.date
+HAVING metrics_count >= 3
+ORDER BY avg_score DESC
+LIMIT 20;`
+		},
+		{
+			label: 'Import-Verlauf',
+			sql: `SELECT id, source, filename, imported_at
+FROM raw_imports
+ORDER BY imported_at DESC;`
+		},
+		{
+			label: 'Korrelationen (Paarvergleich)',
+			sql: `SELECT m1.display_name AS metric_a,
+  m2.display_name AS metric_b,
+  COUNT(*) AS common_days,
+  ROUND(AVG(d1.normalized * d2.normalized) - AVG(d1.normalized) * AVG(d2.normalized), 4) AS covariance
+FROM daily_metrics d1
+JOIN daily_metrics d2 ON d1.date = d2.date AND d1.metric_id < d2.metric_id
+JOIN metric_definitions m1 ON d1.metric_id = m1.id
+JOIN metric_definitions m2 ON d2.metric_id = m2.id
+GROUP BY d1.metric_id, d2.metric_id
+HAVING common_days >= 7
+ORDER BY ABS(covariance) DESC
+LIMIT 20;`
+		},
+		{
+			label: 'Datenbank-Groesse',
+			sql: `SELECT
+  (SELECT COUNT(*) FROM metric_definitions) AS metriken,
+  (SELECT COUNT(*) FROM daily_metrics) AS datenpunkte,
+  (SELECT COUNT(*) FROM raw_imports) AS importe,
+  (SELECT COUNT(*) FROM user_tokens) AS tokens;`
+		}
+	];
+
+	let sqlInput = $state(EXAMPLE_QUERIES[0].sql);
 
 	let columns: string[] = $state([]);
 	let rows: unknown[][] = $state([]);
@@ -95,6 +160,26 @@ LIMIT 100;`);
 		URL.revokeObjectURL(url);
 	}
 
+	let exporting = $state(false);
+
+	async function downloadSqlite() {
+		exporting = true;
+		try {
+			const data = await exportDatabase();
+			const blob = new Blob([data], { type: 'application/x-sqlite3' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = 'cassiopeia.db';
+			a.click();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			exporting = false;
+		}
+	}
+
 	$effect(() => {
 		loadSchema();
 	});
@@ -102,8 +187,26 @@ LIMIT 100;`);
 
 <div class="page">
 	<div class="page-header">
-		<h2>SQL Explorer</h2>
-		<p class="page-desc">SQL-Abfragen direkt auf der lokalen Datenbank ausfuehren.</p>
+		<div class="page-header-row">
+			<div>
+				<h2>SQL Explorer</h2>
+				<p class="page-desc">SQL-Abfragen direkt auf der lokalen Datenbank ausfuehren.</p>
+			</div>
+			<button class="download-db-btn" onclick={downloadSqlite} disabled={exporting}>
+				{exporting ? 'Exportiert...' : 'SQLite herunterladen'}
+			</button>
+		</div>
+		<div class="example-queries">
+			{#each EXAMPLE_QUERIES as eq}
+				<button
+					class="example-btn"
+					class:active={sqlInput === eq.sql}
+					onclick={() => (sqlInput = eq.sql)}
+				>
+					{eq.label}
+				</button>
+			{/each}
+		</div>
 	</div>
 
 	<div class="layout">
@@ -197,6 +300,14 @@ LIMIT 100;`);
 		margin-bottom: 1.25rem;
 	}
 
+	.page-header-row {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.75rem;
+	}
+
 	.page-header h2 {
 		margin: 0 0 0.25rem;
 		font-size: 1.35rem;
@@ -208,6 +319,56 @@ LIMIT 100;`);
 		margin: 0;
 		color: #6b7280;
 		font-size: 0.9rem;
+	}
+
+	.download-db-btn {
+		padding: 0.45rem 0.9rem;
+		border-radius: 8px;
+		border: 1px solid #d1d5db;
+		background: #fff;
+		color: #374151;
+		cursor: pointer;
+		font-size: 0.8rem;
+		font-weight: 500;
+		white-space: nowrap;
+		transition: all 0.15s;
+	}
+
+	.download-db-btn:hover:not(:disabled) {
+		background: #f3f4f6;
+	}
+
+	.download-db-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.example-queries {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+
+	.example-btn {
+		padding: 0.3rem 0.6rem;
+		border-radius: 6px;
+		border: 1px solid #e5e7eb;
+		background: #fff;
+		color: #6b7280;
+		cursor: pointer;
+		font-size: 0.75rem;
+		transition: all 0.15s;
+	}
+
+	.example-btn:hover {
+		border-color: #d1d5db;
+		color: #374151;
+	}
+
+	.example-btn.active {
+		background: #1f2937;
+		color: #fff;
+		border-color: #1f2937;
 	}
 
 	.layout {

@@ -1,65 +1,26 @@
-import SQLiteAsyncESMFactory from 'wa-sqlite/dist/wa-sqlite-async.mjs';
-import * as SQLite from 'wa-sqlite';
-// @ts-ignore - wa-sqlite VFS examples don't ship types
-import { IDBBatchAtomicVFS } from 'wa-sqlite/src/examples/IDBBatchAtomicVFS.js';
-
+import type { DbRequest, DbResponse, Param } from './db.protocol';
 import type { MetricDefinition } from './types';
 
-type Param = string | number | null;
-
-let sqlite3: ReturnType<typeof SQLite.Factory>;
-let db: number;
+let worker: Worker;
+let nextId = 0;
+const pending = new Map<number, { resolve: (v: DbResponse) => void; reject: (e: Error) => void }>();
 let _initPromise: Promise<void> | null = null;
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS metric_definitions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE NOT NULL,
-  display_name TEXT NOT NULL,
-  source TEXT NOT NULL,
-  original_min REAL NOT NULL DEFAULT 0,
-  original_max REAL NOT NULL,
-  category TEXT,
-  is_default INTEGER NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+function send(request: DbRequest): Promise<DbResponse> {
+	return new Promise((resolve, reject) => {
+		const id = nextId++;
+		pending.set(id, { resolve, reject });
+		if (request.type === 'serialize') {
+			worker.postMessage({ id, request });
+		} else {
+			worker.postMessage({ id, request });
+		}
+	});
+}
 
-CREATE TABLE IF NOT EXISTS daily_metrics (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  date TEXT NOT NULL,
-  metric_id INTEGER NOT NULL REFERENCES metric_definitions(id),
-  raw_value REAL NOT NULL,
-  normalized REAL NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(date, metric_id)
-);
-
-CREATE TABLE IF NOT EXISTS raw_imports (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source TEXT NOT NULL,
-  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
-  filename TEXT,
-  data TEXT
-);
-
-CREATE TABLE IF NOT EXISTS raw_import_data (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  import_id INTEGER NOT NULL REFERENCES raw_imports(id),
-  content TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS user_tokens (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  service TEXT UNIQUE NOT NULL,
-  token TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS sync_meta (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-`;
+function unwrap(response: DbResponse): void {
+	if (response.type === 'error') throw new Error(response.message);
+}
 
 export async function initDB(): Promise<void> {
 	if (_initPromise) return _initPromise;
@@ -68,60 +29,120 @@ export async function initDB(): Promise<void> {
 }
 
 async function _initDBInternal(): Promise<void> {
-	const module = await SQLiteAsyncESMFactory();
-	sqlite3 = SQLite.Factory(module);
-	const vfs = new IDBBatchAtomicVFS('cassiopeia');
-	sqlite3.vfs_register(vfs, true);
-	db = await sqlite3.open_v2('cassiopeia');
-	await sqlite3.exec(db, SCHEMA);
+	worker = new Worker(new URL('./db.worker.ts', import.meta.url), { type: 'module' });
+	worker.onmessage = (e: MessageEvent<{ id: number; response: DbResponse }>) => {
+		const { id, response } = e.data;
+		const p = pending.get(id);
+		if (p) {
+			pending.delete(id);
+			p.resolve(response);
+		}
+	};
+	worker.onerror = (e) => {
+		console.error('DB worker error:', e);
+	};
+
+	const resp = await send({ type: 'init' });
+	unwrap(resp);
+
+	// Migrate data from old IDBBatchAtomicVFS if it exists
+	await migrateFromIDB();
 }
+
+// --- Migration from IDBBatchAtomicVFS ---
+
+async function migrateFromIDB(): Promise<void> {
+	if (localStorage.getItem('cassiopeia-migrated-opfs')) return;
+
+	// Check if old IDB database exists
+	const databases = await indexedDB.databases();
+	const hasOldDb = databases.some((db) => db.name === 'cassiopeia');
+	if (!hasOldDb) {
+		localStorage.setItem('cassiopeia-migrated-opfs', '1');
+		return;
+	}
+
+	// Dynamically import the old async build to read data
+	const [SQLiteAsyncESMFactory, SQLiteModule, { IDBBatchAtomicVFS }] = await Promise.all([
+		import('wa-sqlite/dist/wa-sqlite-async.mjs').then((m) => m.default),
+		import('wa-sqlite'),
+		import('wa-sqlite/src/examples/IDBBatchAtomicVFS.js')
+	]);
+
+	const SQLite = SQLiteModule;
+	const module = await SQLiteAsyncESMFactory();
+	const oldSqlite3 = SQLite.Factory(module);
+	const vfs = new IDBBatchAtomicVFS('cassiopeia');
+	oldSqlite3.vfs_register(vfs, true);
+	const oldDb = await oldSqlite3.open_v2('cassiopeia');
+
+	// Get all tables
+	const tables: string[] = [];
+	await oldSqlite3.exec(
+		oldDb,
+		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+		(row: unknown[]) => {
+			tables.push(row[0] as string);
+		}
+	);
+
+	// Dump each table and insert into new database
+	for (const table of tables) {
+		const rows: unknown[][] = [];
+		let columns: string[] = [];
+		await oldSqlite3.exec(oldDb, `SELECT * FROM "${table}"`, (row: unknown[], cols: string[]) => {
+			if (columns.length === 0) columns = [...cols];
+			rows.push([...row]);
+		});
+
+		if (rows.length === 0) continue;
+
+		// Build INSERT statements in batches
+		const placeholders = columns.map(() => '?').join(',');
+		const colList = columns.map((c) => `"${c}"`).join(',');
+		const insertSql = `INSERT OR REPLACE INTO "${table}" (${colList}) VALUES (${placeholders})`;
+
+		for (const row of rows) {
+			const params = row.map((v) => (v === undefined ? null : (v as Param)));
+			const resp = await send({ type: 'query', sql: insertSql, params });
+			unwrap(resp);
+		}
+	}
+
+	await oldSqlite3.close(oldDb);
+
+	// Delete old IDB database
+	await new Promise<void>((resolve, reject) => {
+		const req = indexedDB.deleteDatabase('cassiopeia');
+		req.onsuccess = () => resolve();
+		req.onerror = () => reject(req.error);
+	});
+
+	localStorage.setItem('cassiopeia-migrated-opfs', '1');
+	console.log('Migrated database from IndexedDB to OPFS');
+}
+
+// --- Core query functions ---
 
 export async function query<T = Record<string, unknown>>(
 	sql: string,
 	params: Param[] = []
 ): Promise<T[]> {
 	await initDB();
-
-	if (params.length === 0) {
-		const rows: T[] = [];
-		await sqlite3.exec(db, sql, (row: (unknown)[], columns: string[]) => {
-			const obj: Record<string, unknown> = {};
-			columns.forEach((col, i) => {
-				obj[col] = row[i];
-			});
-			rows.push(obj as T);
-		});
-		return rows;
-	}
-
-	// Use statements for parameterized queries
-	const results: T[] = [];
-	for await (const stmt of sqlite3.statements(db, sql)) {
-		sqlite3.bind_collection(stmt, params);
-		const colCount = sqlite3.column_count(stmt);
-		const cols = Array.from({ length: colCount }, (_, i) => sqlite3.column_name(stmt, i));
-		while ((await sqlite3.step(stmt)) === SQLite.SQLITE_ROW) {
-			const obj: Record<string, unknown> = {};
-			for (let i = 0; i < colCount; i++) {
-				obj[cols[i]] = sqlite3.column(stmt, i);
-			}
-			results.push(obj as T);
-		}
-	}
-	return results;
+	const resp = await send({ type: 'query', sql, params });
+	if (resp.type === 'error') throw new Error(resp.message);
+	if (resp.type === 'rows') return resp.rows as T[];
+	return [];
 }
 
 export async function execute(sql: string, params: Param[] = []): Promise<void> {
 	await initDB();
-
 	if (params.length === 0) {
-		await sqlite3.exec(db, sql);
-		return;
-	}
-
-	for await (const stmt of sqlite3.statements(db, sql)) {
-		sqlite3.bind_collection(stmt, params);
-		await sqlite3.step(stmt);
+		const resp = await send({ type: 'exec', sql });
+		unwrap(resp);
+	} else {
+		const resp = await send({ type: 'query', sql, params });
+		unwrap(resp);
 	}
 }
 
@@ -129,15 +150,39 @@ export async function queryRaw(
 	sql: string
 ): Promise<{ columns: string[]; rows: unknown[][] }> {
 	await initDB();
-	const columns: string[] = [];
-	const rows: unknown[][] = [];
+	const resp = await send({ type: 'queryRaw', sql });
+	if (resp.type === 'error') throw new Error(resp.message);
+	if (resp.type === 'raw') return { columns: resp.columns, rows: resp.rows };
+	return { columns: [], rows: [] };
+}
 
-	await sqlite3.exec(db, sql, (row: (unknown)[], cols: string[]) => {
-		if (columns.length === 0) columns.push(...cols);
-		rows.push([...row]);
-	});
+export async function exportDatabase(): Promise<Uint8Array> {
+	await initDB();
+	const resp = await send({ type: 'serialize' });
+	if (resp.type === 'error') throw new Error(resp.message);
+	if (resp.type !== 'dump') throw new Error('Unexpected response type');
 
-	return { columns, rows };
+	// Reconstruct a standard .sqlite file using sql.js on the main thread.
+	// sql.js includes sqlite3_serialize via db.export(), which wa-sqlite lacks.
+	const initSqlJs = (await import('sql.js')).default;
+	const sqlWasmUrl = new URL('sql.js/dist/sql-wasm.wasm', import.meta.url).href;
+	const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
+	const exportDb = new SQL.Database();
+
+	for (const table of resp.tables) {
+		exportDb.run(table.sql);
+		if (table.rows.length === 0) continue;
+		const placeholders = table.columns.map(() => '?').join(',');
+		const colList = table.columns.map((c) => `"${c}"`).join(',');
+		const sql = `INSERT INTO "${table.name}" (${colList}) VALUES (${placeholders})`;
+		for (const row of table.rows) {
+			exportDb.run(sql, row as (string | number | null)[]);
+		}
+	}
+
+	const data = exportDb.export();
+	exportDb.close();
+	return data;
 }
 
 // --- High-level data access ---
