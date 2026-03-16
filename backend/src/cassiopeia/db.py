@@ -45,12 +45,19 @@ async def execute(
     """Execute a SQL statement against the admin Turso database."""
     stmt: dict[str, Any] = {"sql": sql}
     if args:
-        stmt["args"] = [
-            {"type": "null", "value": None}
-            if a is None
-            else {"type": "text", "value": str(a)}
-            for a in args
-        ]
+        stmt["args"] = []
+        for a in args:
+            if a is None:
+                stmt["args"].append({"type": "null", "value": None})
+            elif isinstance(a, bool):
+                # Booleans are stored as 0/1 in SQLite
+                stmt["args"].append({"type": "integer", "value": "1" if a else "0"})
+            elif isinstance(a, int):
+                stmt["args"].append({"type": "integer", "value": str(a)})
+            elif isinstance(a, float):
+                stmt["args"].append({"type": "float", "value": a})
+            else:
+                stmt["args"].append({"type": "text", "value": str(a)})
 
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(

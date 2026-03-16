@@ -14,6 +14,7 @@ from cassiopeia.config import settings
 from cassiopeia.db import init_schema
 from cassiopeia.routers.auth import router as auth_router
 from cassiopeia.routers.backup import router as backup_router
+from cassiopeia.routers.metrics import router as metrics_router
 from cassiopeia.routers.sync import router as sync_router
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ app = FastAPI(title="Cassiopeia", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(backup_router)
 app.include_router(sync_router)
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

@@ -156,20 +156,20 @@ async def provision_database(request: Request) -> dict[str, Any]:
     # Initialize schema via libsql HTTP API
     try:
         async with httpx.AsyncClient(timeout=15) as client:
+            requests: list[dict[str, Any]] = []
             for statement in USER_DB_SCHEMA.strip().split(";"):
                 stmt = statement.strip()
                 if not stmt:
                     continue
-                await client.post(
-                    f"https://{db_name}-{settings.turso_org}.turso.io/v2/pipeline",
-                    headers={"Authorization": f"Bearer {jwt}"},
-                    json={
-                        "requests": [
-                            {"type": "execute", "stmt": {"sql": stmt}},
-                            {"type": "close"},
-                        ]
-                    },
-                )
+                requests.append({"type": "execute", "stmt": {"sql": stmt}})
+            requests.append({"type": "close"})
+
+            resp = await client.post(
+                f"https://{db_name}-{settings.turso_org}.turso.io/v2/pipeline",
+                headers={"Authorization": f"Bearer {jwt}"},
+                json={"requests": requests},
+            )
+            resp.raise_for_status()
     except Exception as e:
         logger.warning("Schema init may have failed: %s", e)
 
