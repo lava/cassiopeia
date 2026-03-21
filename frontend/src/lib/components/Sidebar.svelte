@@ -17,8 +17,7 @@
 
 	const nav: NavItem[] = [
 		{ href: '/dashboard', label: 'Dashboard', icon: 'chart' },
-		{ href: '/dashboard/import', label: 'Import', icon: 'import' },
-		{ href: '/dashboard/imports', label: 'Imports', icon: 'history' },
+		{ href: '/dashboard/imports', label: 'Imports', icon: 'import' },
 		{ href: '/dashboard/metrics', label: 'Metriken', icon: 'list' },
 		{ href: '/dashboard/sql', label: 'SQL', icon: 'sql' }
 	];
@@ -61,10 +60,6 @@
 					{:else if item.icon === 'import'}
 						<path
 							d="M10 2a1 1 0 011 1v6.586l2.293-2.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 9.586V3a1 1 0 011-1zM4 14a1 1 0 011 1v1h10v-1a1 1 0 112 0v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2a1 1 0 011-1z"
-						/>
-					{:else if item.icon === 'history'}
-						<path
-							d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v4a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L11 8.586V5z"
 						/>
 					{:else if item.icon === 'list'}
 						<path
