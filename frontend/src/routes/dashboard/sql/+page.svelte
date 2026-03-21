@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { queryRaw, exportDatabase } from '$lib/db';
 
 	const EXAMPLE_QUERIES = [
@@ -72,7 +73,8 @@ LIMIT 20;`
 		}
 	];
 
-	let sqlInput = $state(EXAMPLE_QUERIES[0].sql);
+	let sqlInput = $state(page.url.searchParams.get('q') || EXAMPLE_QUERIES[0].sql);
+	const autoRun = page.url.searchParams.has('q');
 
 	let columns: string[] = $state([]);
 	let rows: unknown[][] = $state([]);
@@ -182,6 +184,7 @@ LIMIT 20;`
 
 	$effect(() => {
 		loadSchema();
+		if (autoRun) runQuery();
 	});
 </script>
 

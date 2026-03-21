@@ -72,6 +72,15 @@
 		return parts.length > 0 ? parts.join(', ') : null;
 	}
 
+	function sqlUrl(imp: RawImportRow): string {
+		const sql = `SELECT ri.source, ri.filename, ri.imported_at, ri.data,
+  rid.content
+FROM raw_imports ri
+LEFT JOIN raw_import_data rid ON rid.import_id = ri.id
+WHERE ri.id = ${imp.id};`;
+		return `/dashboard/sql?q=${encodeURIComponent(sql)}`;
+	}
+
 	onMount(async () => {
 		try {
 			imports = await getRawImports();
@@ -103,6 +112,7 @@
 						<th>Importiert am</th>
 						<th>Zeitraum</th>
 						<th>Details</th>
+						<th></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -118,6 +128,9 @@
 							<td class="datetime">{formatDateTime(imp.imported_at)}</td>
 							<td class="daterange">{dateRange(meta) ?? '–'}</td>
 							<td class="details">{metaSummary(meta) ?? '–'}</td>
+							<td>
+								<a href={sqlUrl(imp)} class="sql-link" title="Im SQL Explorer anzeigen">SQL</a>
+							</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -251,6 +264,25 @@
 	.details {
 		font-size: 0.8rem;
 		color: #6b7280;
+	}
+
+	.sql-link {
+		display: inline-block;
+		padding: 0.15rem 0.45rem;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		font-family: monospace;
+		text-decoration: none;
+		color: #6b7280;
+		background: #f3f4f6;
+		border: 1px solid #e5e7eb;
+		transition: all 0.15s;
+	}
+
+	.sql-link:hover {
+		color: #1f2937;
+		background: #e5e7eb;
 	}
 
 	.total {
