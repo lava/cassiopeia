@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { importBearableCsv } from '$lib/importers/bearable';
 	import { importGarminCsv } from '$lib/importers/garmin';
-	import { syncOura } from '$lib/importers/oura';
+	import { syncOura, importOuraCsv } from '$lib/importers/oura';
 	import { getToken, setToken, deleteToken } from '$lib/db';
 	import type { ImportResult } from '$lib/types';
 
@@ -55,6 +55,50 @@
 			state.error = e instanceof Error ? e.message : 'Import fehlgeschlagen';
 		} finally {
 			state.uploading = false;
+		}
+	}
+
+	let ouraCsvFiles: File[] = $state([]);
+	let ouraCsvUploading = $state(false);
+	let ouraCsvResult: ImportResult | null = $state(null);
+	let ouraCsvError: string | null = $state(null);
+	let ouraCsvDragover = $state(false);
+
+	function handleOuraCsvFileChange(e: Event) {
+		const input = e.target as HTMLInputElement;
+		ouraCsvFiles = input.files ? Array.from(input.files) : [];
+		ouraCsvResult = null;
+		ouraCsvError = null;
+	}
+
+	function handleOuraCsvDrop(e: DragEvent) {
+		e.preventDefault();
+		ouraCsvDragover = false;
+		const dropped = e.dataTransfer?.files;
+		if (!dropped) return;
+		const csvFiles = Array.from(dropped).filter((f) => f.name.endsWith('.csv'));
+		if (csvFiles.length > 0) {
+			ouraCsvFiles = csvFiles;
+			ouraCsvResult = null;
+			ouraCsvError = null;
+		}
+	}
+
+	async function handleImportOuraCsv() {
+		if (ouraCsvFiles.length === 0) return;
+		ouraCsvUploading = true;
+		ouraCsvResult = null;
+		ouraCsvError = null;
+
+		try {
+			const fileData = await Promise.all(
+				ouraCsvFiles.map(async (f) => ({ name: f.name, content: await f.text() }))
+			);
+			ouraCsvResult = await importOuraCsv(fileData);
+		} catch (e) {
+			ouraCsvError = e instanceof Error ? e.message : 'Import fehlgeschlagen';
+		} finally {
+			ouraCsvUploading = false;
 		}
 	}
 
@@ -185,6 +229,67 @@
 
 	{@render uploadCard(bearable, 'Bearable CSV', 'Bearable-Export im CSV-Format importieren.', importBearableCsv)}
 	{@render uploadCard(garmin, 'Garmin CSV', 'GarminDB Daily-Summary-Export im CSV-Format importieren.', importGarminCsv)}
+
+	<div class="card">
+		<h3>Oura CSV</h3>
+		<p class="card-desc">
+			Oura-Export CSV-Dateien importieren (dailysleep, dailyreadiness, dailyactivity).
+			Mehrere Dateien gleichzeitig auswaehlen.
+		</p>
+
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="drop-zone"
+			class:dragover={ouraCsvDragover}
+			class:has-file={ouraCsvFiles.length > 0}
+			ondrop={(e: DragEvent) => handleOuraCsvDrop(e)}
+			ondragover={(e: DragEvent) => { e.preventDefault(); ouraCsvDragover = true; }}
+			ondragleave={() => (ouraCsvDragover = false)}
+		>
+			{#if ouraCsvFiles.length > 0}
+				<span class="file-icon">📄</span>
+				<span class="file-name">{ouraCsvFiles.length} Datei{ouraCsvFiles.length > 1 ? 'en' : ''}</span>
+				<span class="file-size">{ouraCsvFiles.map((f) => f.name).join(', ')}</span>
+				<button class="file-clear" onclick={() => (ouraCsvFiles = [])}>&times;</button>
+			{:else}
+				<span class="drop-icon">📥</span>
+				<span class="drop-text">CSV-Dateien hierher ziehen</span>
+				<span class="drop-hint">oder</span>
+				<label class="file-select-btn">
+					Dateien auswaehlen
+					<input type="file" accept=".csv" multiple onchange={(e: Event) => handleOuraCsvFileChange(e)} hidden />
+				</label>
+			{/if}
+		</div>
+
+		<button class="upload-btn" onclick={handleImportOuraCsv} disabled={ouraCsvFiles.length === 0 || ouraCsvUploading}>
+			{#if ouraCsvUploading}
+				Wird importiert...
+			{:else}
+				Importieren
+			{/if}
+		</button>
+
+		{#if ouraCsvResult}
+			<div class="result success">
+				<strong>{ouraCsvResult.imported}</strong> Datenpunkte importiert
+				{#if ouraCsvResult.skipped > 0}
+					&middot; <strong>{ouraCsvResult.skipped}</strong> uebersprungen
+				{/if}
+				{#if ouraCsvResult.errors.length > 0}
+					<div class="result-errors">
+						{#each ouraCsvResult.errors as err}
+							<div>{err}</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if ouraCsvError}
+			<div class="result error-msg">{ouraCsvError}</div>
+		{/if}
+	</div>
 
 	<div class="card">
 		<h3>Oura Ring</h3>

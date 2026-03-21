@@ -1,3 +1,4 @@
+import Papa from 'papaparse';
 import { upsertMetricDefinition, upsertDailyMetric, addRawImport, getToken } from '$lib/db';
 import type { ImportResult } from './bearable';
 
@@ -170,6 +171,144 @@ export async function syncOura(startDate: string, endDate: string): Promise<Impo
 		{
 			start_date: startDate,
 			end_date: endDate,
+			record_counts: Object.fromEntries(
+				Object.entries(allRawData).map(([k, v]) => [k, v.length])
+			)
+		},
+		JSON.stringify(allRawData)
+	);
+
+	return { imported, skipped, errors };
+}
+
+/**
+ * Parse a Python-style dict string like "{'key': 42, 'other': 88}" into a JS object.
+ * Handles single-quoted keys and numeric values.
+ */
+function parsePythonDict(raw: string): Record<string, number> {
+	const result: Record<string, number> = {};
+	if (!raw || !raw.includes('{')) return result;
+	// Remove outer braces and whitespace
+	const inner = raw.replace(/^\s*\{/, '').replace(/\}\s*$/, '');
+	// Match 'key': value pairs
+	const re = /'([^']+)'\s*:\s*([0-9.eE+-]+)/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(inner)) !== null) {
+		const val = parseFloat(m[2]);
+		if (!isNaN(val)) {
+			result[m[1]] = val;
+		}
+	}
+	return result;
+}
+
+/**
+ * Classify an Oura CSV file by its filename prefix.
+ * Returns 'dailysleep' | 'dailyreadiness' | 'dailyactivity' | null.
+ */
+function classifyOuraFile(filename: string): string | null {
+	const lower = filename.toLowerCase();
+	if (lower.startsWith('dailysleep')) return 'dailysleep';
+	if (lower.startsWith('dailyreadiness')) return 'dailyreadiness';
+	if (lower.startsWith('dailyactivity')) return 'dailyactivity';
+	return null;
+}
+
+/**
+ * Import Oura data from CSV files (the export format from the Oura web dashboard).
+ * Accepts multiple CSV file contents keyed by filename.
+ */
+export async function importOuraCsv(
+	files: { name: string; content: string }[]
+): Promise<ImportResult> {
+	// Ensure metric definitions exist
+	const metricIds: Record<string, number> = {};
+	for (const [key, [name, displayName, originalMax, category]] of Object.entries(OURA_METRICS)) {
+		metricIds[key] = await upsertMetricDefinition({
+			name,
+			display_name: displayName,
+			source: 'oura',
+			original_min: 0,
+			original_max: originalMax,
+			category,
+			is_default: DEFAULT_METRICS.has(key)
+		});
+	}
+
+	let imported = 0;
+	let skipped = 0;
+	const errors: string[] = [];
+	const allRawData: Record<string, unknown[]> = {};
+
+	for (const file of files) {
+		const fileType = classifyOuraFile(file.name);
+		if (!fileType) {
+			skipped++;
+			continue;
+		}
+
+		const parsed = Papa.parse<Record<string, string>>(file.content, {
+			header: true,
+			skipEmptyLines: true
+		});
+
+		const fields = parsed.meta.fields ?? [];
+		if (!fields.includes('day')) {
+			errors.push(`${file.name}: Spalte 'day' nicht gefunden`);
+			continue;
+		}
+
+		allRawData[fileType] = parsed.data;
+
+		for (const row of parsed.data) {
+			const dayStr = row['day'];
+			if (!dayStr || !/^\d{4}-\d{2}-\d{2}/.test(dayStr)) {
+				skipped++;
+				continue;
+			}
+
+			let metrics: Record<string, number | null> = {};
+
+			if (fileType === 'dailysleep') {
+				const score = parseFloat(row['score']);
+				metrics = { sleep_score: isNaN(score) ? null : score };
+			} else if (fileType === 'dailyreadiness') {
+				const score = parseFloat(row['score']);
+				const contributors = parsePythonDict(row['contributors'] ?? '');
+				metrics = {
+					readiness_score: isNaN(score) ? null : score,
+					hrv_balance: contributors['hrv_balance'] ?? null,
+					resting_heart_rate: contributors['resting_heart_rate'] ?? null
+				};
+			} else if (fileType === 'dailyactivity') {
+				const score = parseFloat(row['score']);
+				metrics = { activity_score: isNaN(score) ? null : score };
+			}
+
+			for (const [metricKey, value] of Object.entries(metrics)) {
+				if (value === null || value === undefined) {
+					skipped++;
+					continue;
+				}
+				const metricId = metricIds[metricKey];
+				if (!metricId) {
+					skipped++;
+					continue;
+				}
+				const [, , originalMax] = OURA_METRICS[metricKey];
+				const normalized =
+					originalMax > 0 ? Math.max(0, Math.min(1, value / originalMax)) : 0;
+				await upsertDailyMetric(dayStr, metricId, value, normalized);
+				imported++;
+			}
+		}
+	}
+
+	await addRawImport(
+		'oura',
+		files.map((f) => f.name).join(', '),
+		{
+			files: files.map((f) => f.name),
 			record_counts: Object.fromEntries(
 				Object.entries(allRawData).map(([k, v]) => [k, v.length])
 			)
