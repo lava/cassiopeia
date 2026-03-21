@@ -19,6 +19,7 @@
     "vite": "^6"
   },
   "dependencies": {
+    "@garmin/fitsdk": "^21.195.0",
     "@libsql/client": "^0.17.0",
     "chart.js": "^4",
     "papaparse": "^5.5.3",

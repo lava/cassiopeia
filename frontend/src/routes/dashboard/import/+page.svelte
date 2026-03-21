@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { importBearableCsv } from '$lib/importers/bearable';
-	import { importGarminCsv } from '$lib/importers/garmin';
+	import { importGarminCsv, importGarminFit } from '$lib/importers/garmin';
 	import { syncOura, importOuraCsv } from '$lib/importers/oura';
 	import { getToken, setToken, deleteToken } from '$lib/db';
 	import type { ImportResult } from '$lib/types';
@@ -19,7 +19,76 @@
 	}
 
 	let bearable: UploadState = $state(createUploadState());
-	let garmin: UploadState = $state(createUploadState());
+
+	let garminFiles: File[] = $state([]);
+	let garminUploading = $state(false);
+	let garminResult: ImportResult | null = $state(null);
+	let garminError: string | null = $state(null);
+	let garminDragover = $state(false);
+
+	function handleGarminFileChange(e: Event) {
+		const input = e.target as HTMLInputElement;
+		garminFiles = input.files ? Array.from(input.files) : [];
+		garminResult = null;
+		garminError = null;
+	}
+
+	function handleGarminDrop(e: DragEvent) {
+		e.preventDefault();
+		garminDragover = false;
+		const dropped = e.dataTransfer?.files;
+		if (!dropped) return;
+		const accepted = Array.from(dropped).filter(
+			(f) => f.name.endsWith('.csv') || f.name.endsWith('.fit')
+		);
+		if (accepted.length > 0) {
+			garminFiles = accepted;
+			garminResult = null;
+			garminError = null;
+		}
+	}
+
+	async function handleImportGarmin() {
+		if (garminFiles.length === 0) return;
+		garminUploading = true;
+		garminResult = null;
+		garminError = null;
+
+		try {
+			const csvFiles = garminFiles.filter((f) => f.name.endsWith('.csv'));
+			const fitFiles = garminFiles.filter((f) => f.name.endsWith('.fit'));
+
+			let totalImported = 0;
+			let totalSkipped = 0;
+			const allErrors: string[] = [];
+
+			// Process CSV files
+			for (const f of csvFiles) {
+				const text = await f.text();
+				const result = await importGarminCsv(text, f.name);
+				totalImported += result.imported;
+				totalSkipped += result.skipped;
+				allErrors.push(...result.errors);
+			}
+
+			// Process FIT files
+			if (fitFiles.length > 0) {
+				const fitData = await Promise.all(
+					fitFiles.map(async (f) => ({ name: f.name, bytes: await f.arrayBuffer() }))
+				);
+				const result = await importGarminFit(fitData);
+				totalImported += result.imported;
+				totalSkipped += result.skipped;
+				allErrors.push(...result.errors);
+			}
+
+			garminResult = { imported: totalImported, skipped: totalSkipped, errors: allErrors };
+		} catch (e) {
+			garminError = e instanceof Error ? e.message : 'Import fehlgeschlagen';
+		} finally {
+			garminUploading = false;
+		}
+	}
 
 	function handleFileChange(state: UploadState, e: Event) {
 		const input = e.target as HTMLInputElement;
@@ -228,7 +297,69 @@
 	{/snippet}
 
 	{@render uploadCard(bearable, 'Bearable CSV', 'Bearable-Export im CSV-Format importieren.', importBearableCsv)}
-	{@render uploadCard(garmin, 'Garmin CSV', 'GarminDB Daily-Summary-Export im CSV-Format importieren.', importGarminCsv)}
+	<div class="card">
+		<h3>Garmin</h3>
+		<p class="card-desc">
+			Garmin-Daten importieren: Aggregator-CSV aus dem Garmin Connect Export
+			und/oder .fit-Aktivitaetsdateien. Mehrere Dateien gleichzeitig auswaehlen.
+		</p>
+
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="drop-zone"
+			class:dragover={garminDragover}
+			class:has-file={garminFiles.length > 0}
+			ondrop={(e: DragEvent) => handleGarminDrop(e)}
+			ondragover={(e: DragEvent) => { e.preventDefault(); garminDragover = true; }}
+			ondragleave={() => (garminDragover = false)}
+		>
+			{#if garminFiles.length > 0}
+				<span class="file-icon">📄</span>
+				<span class="file-name">{garminFiles.length} Datei{garminFiles.length > 1 ? 'en' : ''}</span>
+				<span class="file-size">
+					{garminFiles.filter((f) => f.name.endsWith('.csv')).length} CSV,
+					{garminFiles.filter((f) => f.name.endsWith('.fit')).length} FIT
+				</span>
+				<button class="file-clear" onclick={() => (garminFiles = [])}>&times;</button>
+			{:else}
+				<span class="drop-icon">📥</span>
+				<span class="drop-text">CSV- oder FIT-Dateien hierher ziehen</span>
+				<span class="drop-hint">oder</span>
+				<label class="file-select-btn">
+					Dateien auswaehlen
+					<input type="file" accept=".csv,.fit" multiple onchange={(e: Event) => handleGarminFileChange(e)} hidden />
+				</label>
+			{/if}
+		</div>
+
+		<button class="upload-btn" onclick={handleImportGarmin} disabled={garminFiles.length === 0 || garminUploading}>
+			{#if garminUploading}
+				Wird importiert...
+			{:else}
+				Importieren
+			{/if}
+		</button>
+
+		{#if garminResult}
+			<div class="result success">
+				<strong>{garminResult.imported}</strong> Datenpunkte importiert
+				{#if garminResult.skipped > 0}
+					&middot; <strong>{garminResult.skipped}</strong> uebersprungen
+				{/if}
+				{#if garminResult.errors.length > 0}
+					<div class="result-errors">
+						{#each garminResult.errors as err}
+							<div>{err}</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if garminError}
+			<div class="result error-msg">{garminError}</div>
+		{/if}
+	</div>
 
 	<div class="card">
 		<h3>Oura CSV</h3>

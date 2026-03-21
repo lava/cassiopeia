@@ -452,3 +452,197 @@ export async function importGarminCsv(
 		return importLegacyFormat(parsed, dateCol, fields, csvContent, filename);
 	}
 }
+
+// ── FIT file import ────────────────────────────────────────────────────
+
+interface FitSession {
+	date: string;
+	sport: string;
+	subSport: string;
+	totalCalories: number | null;
+	totalDistance: number | null;
+	durationMinutes: number | null;
+	avgHeartRate: number | null;
+	maxHeartRate: number | null;
+	avgStress: number | null;
+	avgSpo2: number | null;
+	avgRespirationRate: number | null;
+}
+
+const FIT_METRICS: Record<string, MetricDef> = {
+	fit_calories: ['fit_calories', 'Aktivitaetskalorien', 'garmin_fit', 0, 3000, 'vitals'],
+	fit_distance: ['fit_distance', 'Aktivitaetsdistanz (m)', 'garmin_fit', 0, 20000, 'vitals'],
+	fit_duration: ['fit_duration', 'Aktivitaetsdauer (min)', 'garmin_fit', 0, 180, 'vitals'],
+	fit_activity_count: [
+		'fit_activity_count',
+		'Aktivitaeten',
+		'garmin_fit',
+		0,
+		10,
+		'vitals'
+	],
+	fit_avg_hr: ['fit_avg_hr', 'Durchschn. Puls (Aktivitaet)', 'garmin_fit', 30, 200, 'vitals'],
+	fit_max_hr: ['fit_max_hr', 'Max Puls (Aktivitaet)', 'garmin_fit', 60, 220, 'vitals']
+};
+
+async function parseFitFile(bytes: ArrayBuffer): Promise<FitSession[]> {
+	const { Decoder, Stream } = await import('@garmin/fitsdk');
+	const stream = Stream.fromArrayBuffer(bytes);
+	const decoder = new Decoder(stream);
+
+	if (!decoder.isFIT()) return [];
+
+	const { messages, errors } = decoder.read({
+		convertDateTimesToDates: true,
+		convertTypesToStrings: true,
+		includeUnknownData: false
+	});
+
+	if (errors.length > 0) {
+		console.warn('FIT decode errors:', errors);
+	}
+
+	const sessions: FitSession[] = [];
+	const sessionMesgs = messages.sessionMesgs ?? [];
+
+	for (const s of sessionMesgs) {
+		const startTime: Date | undefined = s.startTime ?? s.timestamp;
+		if (!startTime || !(startTime instanceof Date)) continue;
+
+		// Use local date: offset by timezone if available, else use UTC
+		const date = startTime.toISOString().slice(0, 10);
+
+		sessions.push({
+			date,
+			sport: s.sport ?? 'unknown',
+			subSport: s.subSport ?? 'unknown',
+			totalCalories: typeof s.totalCalories === 'number' ? s.totalCalories : null,
+			totalDistance: typeof s.totalDistance === 'number' ? s.totalDistance : null,
+			durationMinutes:
+				typeof s.totalTimerTime === 'number' ? Math.round(s.totalTimerTime / 60) : null,
+			avgHeartRate: typeof s.avgHeartRate === 'number' ? s.avgHeartRate : null,
+			maxHeartRate: typeof s.maxHeartRate === 'number' ? s.maxHeartRate : null,
+			avgStress: typeof s.avgStress === 'number' ? s.avgStress : null,
+			avgSpo2: typeof s.avgSpo2 === 'number' ? s.avgSpo2 : null,
+			avgRespirationRate:
+				typeof s.enhancedAvgRespirationRate === 'number'
+					? s.enhancedAvgRespirationRate
+					: null
+		});
+	}
+
+	return sessions;
+}
+
+export async function importGarminFit(
+	files: { name: string; bytes: ArrayBuffer }[]
+): Promise<ImportResult> {
+	let imported = 0;
+	let skipped = 0;
+	const errors: string[] = [];
+
+	// Parse all FIT files and collect sessions
+	const allSessions: FitSession[] = [];
+	for (const file of files) {
+		try {
+			const sessions = await parseFitFile(file.bytes);
+			if (sessions.length === 0) {
+				skipped++;
+			}
+			allSessions.push(...sessions);
+		} catch (e) {
+			errors.push(`${file.name}: ${e instanceof Error ? e.message : 'Parse-Fehler'}`);
+		}
+	}
+
+	if (allSessions.length === 0) {
+		return { imported, skipped, errors };
+	}
+
+	// Group sessions by date
+	const byDate = new Map<string, FitSession[]>();
+	for (const session of allSessions) {
+		const existing = byDate.get(session.date);
+		if (existing) {
+			existing.push(session);
+		} else {
+			byDate.set(session.date, [session]);
+		}
+	}
+
+	// Register metric definitions
+	const metricIds: Record<string, number> = {};
+	for (const [name, [, displayName, source, origMin, origMax, category]] of Object.entries(
+		FIT_METRICS
+	)) {
+		metricIds[name] = await upsertMetricDefinition({
+			name,
+			display_name: displayName,
+			source,
+			original_min: origMin,
+			original_max: origMax,
+			category,
+			is_default: false
+		});
+	}
+
+	// Aggregate per day and upsert
+	for (const [date, sessions] of byDate) {
+		const totalCalories = sessions.reduce((sum, s) => sum + (s.totalCalories ?? 0), 0);
+		const totalDistance = sessions.reduce((sum, s) => sum + (s.totalDistance ?? 0), 0);
+		const totalDuration = sessions.reduce((sum, s) => sum + (s.durationMinutes ?? 0), 0);
+		const activityCount = sessions.length;
+
+		// Weighted average HR (by duration)
+		let avgHr: number | null = null;
+		let maxHr: number | null = null;
+		{
+			let hrSum = 0;
+			let hrWeight = 0;
+			let maxHrVal = 0;
+			for (const s of sessions) {
+				const dur = s.durationMinutes ?? 1;
+				if (s.avgHeartRate !== null) {
+					hrSum += s.avgHeartRate * dur;
+					hrWeight += dur;
+				}
+				if (s.maxHeartRate !== null && s.maxHeartRate > maxHrVal) {
+					maxHrVal = s.maxHeartRate;
+				}
+			}
+			if (hrWeight > 0) avgHr = Math.round(hrSum / hrWeight);
+			if (maxHrVal > 0) maxHr = maxHrVal;
+		}
+
+		const dailyValues: [string, number | null][] = [
+			['fit_calories', totalCalories > 0 ? totalCalories : null],
+			['fit_distance', totalDistance > 0 ? totalDistance : null],
+			['fit_duration', totalDuration > 0 ? totalDuration : null],
+			['fit_activity_count', activityCount],
+			['fit_avg_hr', avgHr],
+			['fit_max_hr', maxHr]
+		];
+
+		for (const [metricName, value] of dailyValues) {
+			if (value === null) {
+				skipped++;
+				continue;
+			}
+			const [, , , origMin, origMax] = FIT_METRICS[metricName];
+			const rangeSize = origMax - origMin;
+			const normalized =
+				rangeSize > 0 ? Math.max(0, Math.min(1, (value - origMin) / rangeSize)) : 0;
+			await upsertDailyMetric(date, metricIds[metricName], value, normalized);
+			imported++;
+		}
+	}
+
+	await addRawImport(
+		'garmin_fit',
+		files.map((f) => f.name).join(', '),
+		{ files: files.length, sessions: allSessions.length, days: byDate.size },
+		null
+	);
+
+	return { imported, skipped, errors };
+}
