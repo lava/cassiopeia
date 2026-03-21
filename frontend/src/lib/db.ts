@@ -298,6 +298,22 @@ export async function addRawImport(
 	return importId;
 }
 
+// --- Import history ---
+
+export interface RawImportRow {
+	id: number;
+	source: string;
+	imported_at: string;
+	filename: string | null;
+	data: string | null;
+}
+
+export async function getRawImports(): Promise<RawImportRow[]> {
+	return query<RawImportRow>(
+		'SELECT id, source, imported_at, filename, data FROM raw_imports ORDER BY imported_at DESC'
+	);
+}
+
 // --- Token management ---
 
 export async function getToken(service: string): Promise<string | null> {
