@@ -54,6 +54,26 @@ const LEGACY_COLUMN_MAP: Record<string, MetricDef> = {
 	distance: ['distance', 'Distanz', 'garmin', 0, 15000, 'vitals']
 };
 
+// ── Activity session CSV column mappings ─────────────────────────────
+// These appear in Garmin Connect exported *_session.csv files.
+const SESSION_COLUMN_MAP: Record<string, MetricDef> = {
+	total_calories: ['fit_calories', 'Aktivitaetskalorien', 'garmin', 0, 3000, 'vitals'],
+	total_distance: ['fit_distance', 'Aktivitaetsdistanz (m)', 'garmin', 0, 20000, 'vitals'],
+	total_timer_time: ['fit_duration_sec', 'Aktivitaetsdauer (s)', 'garmin', 0, 10800, 'vitals'],
+	avg_heart_rate: ['fit_avg_hr', 'Durchschn. Puls (Aktivitaet)', 'garmin', 30, 200, 'vitals'],
+	max_heart_rate: ['fit_max_hr', 'Max Puls (Aktivitaet)', 'garmin', 60, 220, 'vitals'],
+	avg_spo2: ['spo2', 'SpO2', 'garmin', 80, 100, 'vitals'],
+	avg_stress: ['stress', 'Stress', 'garmin', 0, 100, 'vitals'],
+	enhanced_avg_respiration_rate: [
+		'respiration',
+		'Atemfrequenz',
+		'garmin',
+		8,
+		30,
+		'vitals'
+	]
+};
+
 const LEGACY_ALIASES: Record<string, string> = {
 	resting_heart_rate: 'rhr',
 	resting_hr: 'rhr',
@@ -68,7 +88,7 @@ const LEGACY_ALIASES: Record<string, string> = {
 	respiration_rate: 'rr_waking_avg'
 };
 
-const DATE_COLUMN_NAMES = ['day', 'date', 'calendarDate'];
+const DATE_COLUMN_NAMES = ['day', 'date', 'calendarDate', 'timestamp', 'start_time'];
 const LEGACY_SLEEP_COLUMNS = new Set(['total_sleep', 'deep_sleep', 'light_sleep', 'rem_sleep']);
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -87,6 +107,16 @@ function findDateColumn(columns: string[]): string | null {
 function isConnectFormat(fields: string[]): boolean {
 	const connectIndicators = ['totalSteps', 'restingHeartRate', 'totalDistanceMeters'];
 	return connectIndicators.some((c) => fields.includes(c));
+}
+
+/**
+ * Detect whether this is an activity session CSV (from Garmin Connect export
+ * DI-Connect-Uploaded-Files/*_session.csv).
+ */
+function isSessionCsv(fields: string[], filename: string | null): boolean {
+	if (filename && /_session\.csv$/i.test(filename)) return true;
+	const sessionIndicators = ['total_timer_time', 'sport', 'total_calories'];
+	return sessionIndicators.filter((c) => fields.includes(c)).length >= 2;
 }
 
 /**
@@ -247,7 +277,7 @@ async function importConnectFormat(
 		return {
 			imported: 0,
 			skipped: 0,
-			errors: ['No recognized Garmin metric columns found in CSV']
+			errors: []
 		};
 	}
 
@@ -355,11 +385,7 @@ async function importLegacyFormat(
 	}
 
 	if (Object.keys(columnMappings).length === 0) {
-		return {
-			imported: 0,
-			skipped: 0,
-			errors: ['No recognized Garmin metric columns found in CSV']
-		};
+		return { imported: 0, skipped: 0, errors: [] };
 	}
 
 	const metricIds: Record<string, number> = {};
@@ -425,6 +451,97 @@ async function importLegacyFormat(
 	return { imported, skipped, errors };
 }
 
+// ── Import: Activity session CSV ────────────────────────────────────
+
+async function importSessionCsv(
+	parsed: Papa.ParseResult<Record<string, string>>,
+	fields: string[],
+	csvContent: string,
+	filename: string | null
+): Promise<ImportResult> {
+	// Find a column with a datetime/date value to extract the date from
+	const dateCol = findDateColumn(fields);
+	if (!dateCol) {
+		// Store raw data even if we can't extract a date
+		await addRawImport(
+			'garmin',
+			filename,
+			{ rows: parsed.data.length, columns: fields },
+			csvContent
+		);
+		return { imported: 0, skipped: 0, errors: [] };
+	}
+
+	await addRawImport(
+		'garmin',
+		filename,
+		{ rows: parsed.data.length, columns: fields },
+		csvContent
+	);
+
+	const columnMappings: Record<string, MetricDef> = {};
+	for (const col of fields) {
+		if (col === dateCol) continue;
+		if (col in SESSION_COLUMN_MAP) {
+			columnMappings[col] = SESSION_COLUMN_MAP[col];
+		}
+	}
+
+	if (Object.keys(columnMappings).length === 0) {
+		return { imported: 0, skipped: 0, errors: [] };
+	}
+
+	const metricIds: Record<string, number> = {};
+	for (const [, [name, displayName, source, origMin, origMax, category]] of Object.entries(
+		columnMappings
+	)) {
+		metricIds[name] = await upsertMetricDefinition({
+			name,
+			display_name: displayName,
+			source,
+			original_min: origMin,
+			original_max: origMax,
+			category,
+			is_default: false
+		});
+	}
+
+	let imported = 0;
+	let skipped = 0;
+	const errors: string[] = [];
+
+	for (const row of parsed.data) {
+		const dateStr = row[dateCol];
+		if (!dateStr || !/\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+			errors.push(`Invalid date: ${dateStr}`);
+			continue;
+		}
+		// Extract YYYY-MM-DD from datetime strings like "2026-03-11 23:43:18+00:00"
+		const dateMatch = dateStr.match(/(\d{4}-\d{2}-\d{2})/);
+		const date = dateMatch![1];
+
+		for (const [col, [name, , , origMin, origMax]] of Object.entries(columnMappings)) {
+			const rawStr = row[col];
+			if (rawStr === undefined || rawStr === null || rawStr === '') {
+				skipped++;
+				continue;
+			}
+			const rawFloat = parseFloat(rawStr);
+			if (isNaN(rawFloat)) {
+				skipped++;
+				continue;
+			}
+			const rangeSize = origMax - origMin;
+			const normalized =
+				rangeSize > 0 ? Math.max(0, Math.min(1, (rawFloat - origMin) / rangeSize)) : 0;
+			await upsertDailyMetric(date, metricIds[name], rawFloat, normalized);
+			imported++;
+		}
+	}
+
+	return { imported, skipped, errors };
+}
+
 // ── Main entry point ───────────────────────────────────────────────────
 
 export async function importGarminCsv(
@@ -437,20 +554,29 @@ export async function importGarminCsv(
 	});
 
 	const fields = parsed.meta.fields ?? [];
-	const dateCol = findDateColumn(fields);
-	if (!dateCol) {
-		return {
-			imported: 0,
-			skipped: 0,
-			errors: [`CSV missing date column (expected one of: ${DATE_COLUMN_NAMES.join(', ')})`]
-		};
+
+	// Route to the right importer based on detected format
+	if (isConnectFormat(fields)) {
+		const dateCol = findDateColumn(fields);
+		if (!dateCol) {
+			await addRawImport('garmin', filename, { rows: parsed.data.length, columns: fields }, csvContent);
+			return { imported: 0, skipped: 0, errors: [] };
+		}
+		return importConnectFormat(parsed, dateCol, fields, csvContent, filename);
 	}
 
-	if (isConnectFormat(fields)) {
-		return importConnectFormat(parsed, dateCol, fields, csvContent, filename);
-	} else {
+	if (isSessionCsv(fields, filename)) {
+		return importSessionCsv(parsed, fields, csvContent, filename);
+	}
+
+	const dateCol = findDateColumn(fields);
+	if (dateCol) {
 		return importLegacyFormat(parsed, dateCol, fields, csvContent, filename);
 	}
+
+	// Unrecognized format – still store raw data for future use
+	await addRawImport('garmin', filename, { rows: parsed.data.length, columns: fields }, csvContent);
+	return { imported: 0, skipped: 0, errors: [] };
 }
 
 // ── FIT file import ────────────────────────────────────────────────────

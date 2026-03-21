@@ -241,20 +241,23 @@ export async function importOuraCsv(
 	const allRawData: Record<string, unknown[]> = {};
 
 	for (const file of files) {
-		const fileType = classifyOuraFile(file.name);
-		if (!fileType) {
-			skipped++;
-			continue;
-		}
-
 		const parsed = Papa.parse<Record<string, string>>(file.content, {
 			header: true,
 			skipEmptyLines: true
 		});
 
+		const fileType = classifyOuraFile(file.name);
+		if (!fileType) {
+			// Store raw data for unrecognized files
+			allRawData[file.name] = parsed.data;
+			errors.push(`${file.name}: Oura-Dateiformat nicht erkannt (Rohdaten gespeichert)`);
+			continue;
+		}
+
 		const fields = parsed.meta.fields ?? [];
 		if (!fields.includes('day')) {
-			errors.push(`${file.name}: Spalte 'day' nicht gefunden`);
+			allRawData[file.name] = parsed.data;
+			errors.push(`${file.name}: Spalte 'day' nicht gefunden (Rohdaten gespeichert)`);
 			continue;
 		}
 

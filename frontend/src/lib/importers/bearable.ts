@@ -55,19 +55,22 @@ export async function importBearableCsv(
 		skipEmptyLines: true
 	});
 
-	if (!parsed.meta.fields?.includes('date formatted')) {
-		return { imported: 0, skipped: 0, errors: ["CSV missing 'date formatted' column"] };
-	}
-	if (!parsed.meta.fields?.includes('category')) {
-		return { imported: 0, skipped: 0, errors: ["CSV missing 'category' column"] };
-	}
-
 	await addRawImport(
 		'bearable',
 		filename,
 		{ rows: parsed.data.length, columns: parsed.meta.fields },
 		csvContent
 	);
+
+	const warnings: string[] = [];
+	if (!parsed.meta.fields?.includes('date formatted')) {
+		warnings.push("Warnung: Spalte 'date formatted' nicht gefunden – Bearable-Format nicht erkannt");
+		return { imported: 0, skipped: 0, errors: warnings };
+	}
+	if (!parsed.meta.fields?.includes('category')) {
+		warnings.push("Warnung: Spalte 'category' nicht gefunden – Bearable-Format nicht erkannt");
+		return { imported: 0, skipped: 0, errors: warnings };
+	}
 
 	// Parse all rows into typed measurements
 	const measurements: MeasurementRow[] = [];
