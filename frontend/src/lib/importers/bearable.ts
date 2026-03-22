@@ -59,7 +59,8 @@ export async function importBearableCsv(
 		'bearable',
 		filename,
 		{ rows: parsed.data.length, columns: parsed.meta.fields },
-		csvContent
+		csvContent,
+		parsed.data as Record<string, unknown>[]
 	);
 
 	const warnings: string[] = [];

@@ -278,21 +278,38 @@ export async function addRawImport(
 	source: string,
 	filename: string | null,
 	data: unknown,
-	rawContent: string | null = null
+	rawContent: string | null = null,
+	parsedRows: Record<string, unknown>[] | null = null
 ): Promise<number> {
 	await execute('INSERT INTO raw_imports (source, filename, data) VALUES (?, ?, ?)', [
 		source,
 		filename,
 		JSON.stringify(data)
 	]);
-	const rows = await query<{ id: number }>('SELECT last_insert_rowid() as id');
-	const importId = rows[0].id;
+	const idRows = await query<{ id: number }>('SELECT last_insert_rowid() as id');
+	const importId = idRows[0].id;
 
 	if (rawContent) {
 		await execute('INSERT INTO raw_import_data (import_id, content) VALUES (?, ?)', [
 			importId,
 			rawContent
 		]);
+	}
+
+	if (parsedRows && parsedRows.length > 0) {
+		const BATCH = 500;
+		for (let i = 0; i < parsedRows.length; i += BATCH) {
+			const batch = parsedRows.slice(i, i + BATCH);
+			const placeholders = batch.map(() => '(?, ?)').join(', ');
+			const params: (string | number)[] = [];
+			for (const row of batch) {
+				params.push(importId, JSON.stringify(row));
+			}
+			await execute(
+				`INSERT INTO raw_import_rows (import_id, row_data) VALUES ${placeholders}`,
+				params
+			);
+		}
 	}
 
 	return importId;

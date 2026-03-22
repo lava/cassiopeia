@@ -240,7 +240,8 @@ async function importConnectFormat(
 		'garmin',
 		filename,
 		{ rows: parsed.data.length, columns: fields },
-		csvContent
+		csvContent,
+		parsed.data as Record<string, unknown>[]
 	);
 
 	// Collect all metric defs we'll use
@@ -372,7 +373,8 @@ async function importLegacyFormat(
 		'garmin',
 		filename,
 		{ rows: parsed.data.length, columns: fields },
-		csvContent
+		csvContent,
+		parsed.data as Record<string, unknown>[]
 	);
 
 	const columnMappings: Record<string, MetricDef> = {};
@@ -467,7 +469,8 @@ async function importSessionCsv(
 			'garmin',
 			filename,
 			{ rows: parsed.data.length, columns: fields },
-			csvContent
+			csvContent,
+			parsed.data as Record<string, unknown>[]
 		);
 		return { imported: 0, skipped: 0, errors: [] };
 	}
@@ -476,7 +479,8 @@ async function importSessionCsv(
 		'garmin',
 		filename,
 		{ rows: parsed.data.length, columns: fields },
-		csvContent
+		csvContent,
+		parsed.data as Record<string, unknown>[]
 	);
 
 	const columnMappings: Record<string, MetricDef> = {};
@@ -559,7 +563,7 @@ export async function importGarminCsv(
 	if (isConnectFormat(fields)) {
 		const dateCol = findDateColumn(fields);
 		if (!dateCol) {
-			await addRawImport('garmin', filename, { rows: parsed.data.length, columns: fields }, csvContent);
+			await addRawImport('garmin', filename, { rows: parsed.data.length, columns: fields }, csvContent, parsed.data as Record<string, unknown>[]);
 			return { imported: 0, skipped: 0, errors: [] };
 		}
 		return importConnectFormat(parsed, dateCol, fields, csvContent, filename);
@@ -575,7 +579,7 @@ export async function importGarminCsv(
 	}
 
 	// Unrecognized format – still store raw data for future use
-	await addRawImport('garmin', filename, { rows: parsed.data.length, columns: fields }, csvContent);
+	await addRawImport('garmin', filename, { rows: parsed.data.length, columns: fields }, csvContent, parsed.data as Record<string, unknown>[]);
 	return { imported: 0, skipped: 0, errors: [] };
 }
 
@@ -763,11 +767,13 @@ export async function importGarminFit(
 		}
 	}
 
+	const fitColumns = ['date', 'sport', 'subSport', 'totalCalories', 'totalDistance', 'durationMinutes', 'avgHeartRate', 'maxHeartRate', 'avgStress', 'avgSpo2', 'avgRespirationRate'];
 	await addRawImport(
 		'garmin_fit',
 		files.map((f) => f.name).join(', '),
-		{ files: files.length, sessions: allSessions.length, days: byDate.size },
-		null
+		{ files: files.length, sessions: allSessions.length, days: byDate.size, columns: fitColumns },
+		null,
+		allSessions as unknown as Record<string, unknown>[]
 	);
 
 	return { imported, skipped, errors };

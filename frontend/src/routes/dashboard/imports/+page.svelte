@@ -89,11 +89,18 @@
 	}
 
 	function sqlUrl(imp: RawImportRow): string {
-		const sql = `SELECT ri.source, ri.filename, ri.imported_at, ri.data,
-  rid.content
-FROM raw_imports ri
-LEFT JOIN raw_import_data rid ON rid.import_id = ri.id
-WHERE ri.id = ${imp.id};`;
+		const meta = parseMeta(imp.data);
+		const columns = meta?.columns;
+		let sql: string;
+		if (columns && columns.length > 0) {
+			const selects = columns
+				.slice(0, 30)
+				.map((c: string) => `json_extract(row_data, '$.${c.replace(/'/g, "''")}') as "${c.replace(/"/g, '""')}"`)
+				.join(',\n  ');
+			sql = `SELECT\n  ${selects}\nFROM raw_import_rows\nWHERE import_id = ${imp.id}\nORDER BY id;`;
+		} else {
+			sql = `SELECT row_data FROM raw_import_rows WHERE import_id = ${imp.id} ORDER BY id;`;
+		}
 		return `/dashboard/sql?q=${encodeURIComponent(sql)}`;
 	}
 

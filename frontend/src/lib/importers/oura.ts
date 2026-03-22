@@ -165,17 +165,29 @@ export async function syncOura(startDate: string, endDate: string): Promise<Impo
 		}
 	}
 
+	const flatRows: Record<string, unknown>[] = [];
+	for (const [endpoint, records] of Object.entries(allRawData)) {
+		for (const record of records) {
+			flatRows.push({ _source: endpoint, ...(record as Record<string, unknown>) });
+		}
+	}
+	const ouraColumns = flatRows.length > 0
+		? Object.keys(flatRows[0])
+		: ['_source', 'day'];
+
 	await addRawImport(
 		'oura',
 		null,
 		{
 			start_date: startDate,
 			end_date: endDate,
+			columns: ouraColumns,
 			record_counts: Object.fromEntries(
 				Object.entries(allRawData).map(([k, v]) => [k, v.length])
 			)
 		},
-		JSON.stringify(allRawData)
+		JSON.stringify(allRawData),
+		flatRows
 	);
 
 	return { imported, skipped, errors };
@@ -307,16 +319,28 @@ export async function importOuraCsv(
 		}
 	}
 
+	const csvFlatRows: Record<string, unknown>[] = [];
+	for (const [fileType, records] of Object.entries(allRawData)) {
+		for (const record of records) {
+			csvFlatRows.push({ _source: fileType, ...(record as Record<string, unknown>) });
+		}
+	}
+	const csvOuraColumns = csvFlatRows.length > 0
+		? Object.keys(csvFlatRows[0])
+		: ['_source', 'day'];
+
 	await addRawImport(
 		'oura',
 		files.map((f) => f.name).join(', '),
 		{
 			files: files.map((f) => f.name),
+			columns: csvOuraColumns,
 			record_counts: Object.fromEntries(
 				Object.entries(allRawData).map(([k, v]) => [k, v.length])
 			)
 		},
-		JSON.stringify(allRawData)
+		JSON.stringify(allRawData),
+		csvFlatRows
 	);
 
 	return { imported, skipped, errors };
