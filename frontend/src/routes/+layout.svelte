@@ -10,11 +10,22 @@
 	let { children }: { children: Snippet } = $props();
 	const auth = getAuth();
 	let dbReady = $state(false);
+	let dbError = $state<string | null>(null);
 
 	let showSidebar = $derived(page.url.pathname !== '/');
 
 	onMount(async () => {
-		await initDB();
+		try {
+			await initDB();
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			if (msg.includes('Access Handle') || msg.includes('createSyncAccessHandle')) {
+				dbError = 'Die Datenbank ist bereits in einem anderen Tab geöffnet. Bitte schließe den anderen Tab und lade diese Seite neu.';
+			} else {
+				dbError = `Datenbank-Fehler: ${msg}`;
+			}
+			return;
+		}
 		dbReady = true;
 		checkAuth().then(() => {
 			if (auth.authenticated) {
@@ -24,7 +35,11 @@
 	});
 </script>
 
-{#if !dbReady}
+{#if dbError}
+	<div class="loading-screen">
+		<div class="error-message">{dbError}</div>
+	</div>
+{:else if !dbReady}
 	<div class="loading-screen">
 		<span class="loading-star">✦</span>
 	</div>
@@ -52,6 +67,18 @@
 		font-size: 2rem;
 		opacity: 0.3;
 		animation: pulse 1.5s ease-in-out infinite;
+	}
+
+	.error-message {
+		max-width: 400px;
+		padding: 1.5rem;
+		text-align: center;
+		color: #b91c1c;
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: 8px;
+		font-size: 0.95rem;
+		line-height: 1.5;
 	}
 
 	@keyframes pulse {
