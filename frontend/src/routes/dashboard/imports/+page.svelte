@@ -382,7 +382,20 @@
 									{sourceLabels[imp.source] ?? imp.source}
 								</span>
 							</td>
-							<td class="filename">{imp.filename ?? '–'}</td>
+							<td class="filename" title={imp.filename ?? ''}>
+								<span class="filename-text">{imp.filename ?? '–'}</span>
+								{#if imp.filename}
+									<button
+										class="copy-btn"
+										title="Kopieren"
+										onclick={async () => {
+											await navigator.clipboard.writeText(imp.filename!);
+										}}
+									>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+									</button>
+								{/if}
+							</td>
 							<td class="datetime">{formatDateTime(imp.imported_at)}</td>
 							<td class="daterange">{dateRange(meta) ?? '–'}</td>
 							<td class="details">{metaSummary(meta) ?? '–'}</td>
@@ -1095,9 +1108,38 @@
 		font-family: monospace;
 		font-size: 0.8rem;
 		max-width: 250px;
+		white-space: nowrap;
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.filename-text {
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+	}
+
+	.copy-btn {
+		display: none;
+		align-items: center;
+		justify-content: center;
+		background: none;
+		border: 1px solid #d1d5db;
+		border-radius: 4px;
+		padding: 2px;
+		cursor: pointer;
+		color: #6b7280;
+		flex-shrink: 0;
+	}
+
+	.copy-btn:hover {
+		color: #374151;
+		background: #f3f4f6;
+	}
+
+	.filename:hover .copy-btn {
+		display: inline-flex;
 	}
 
 	.datetime,
