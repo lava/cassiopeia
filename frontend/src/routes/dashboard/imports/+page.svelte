@@ -50,12 +50,12 @@
 	}
 
 	function formatDate(iso: string): string {
-		const d = new Date(iso + (iso.includes('T') ? '' : 'T00:00:00'));
+		const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T'));
 		return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 	}
 
 	function formatDateTime(iso: string): string {
-		const d = new Date(iso + (iso.includes('T') ? '' : 'T00:00:00'));
+		const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T'));
 		return d.toLocaleDateString('de-DE', {
 			day: '2-digit',
 			month: '2-digit',
@@ -387,7 +387,7 @@
 							<td class="daterange">{dateRange(meta) ?? '–'}</td>
 							<td class="details">{metaSummary(meta) ?? '–'}</td>
 							<td>
-								<a href={sqlUrl(imp)} class="sql-link" title="Im SQL Explorer anzeigen">SQL</a>
+								<a href={sqlUrl(imp)} class="sql-link" title="Im SQL Explorer anzeigen">View Data</a>
 							</td>
 						</tr>
 					{/each}
