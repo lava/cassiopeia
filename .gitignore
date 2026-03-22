@@ -28,3 +28,7 @@ spec.md
 .idea/
 .vscode/
 *.swp
+
+# Example data
+Example Data/
+Example Data.zip
